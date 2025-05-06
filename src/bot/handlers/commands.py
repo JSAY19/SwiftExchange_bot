@@ -16,7 +16,7 @@ router = Router()
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
     logging.info(f"User {get_user_display(message.from_user)} /start.")
-    # Яркое изображение 
+    # Яркое изображение
     output_path = "pictures/XchangerBot_bright.png"
     photo = FSInputFile(output_path)
     await message.answer_photo(
