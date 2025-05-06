@@ -12,12 +12,6 @@ from PIL import Image, ImageEnhance
 from .colors_logs import get_user_display
 router = Router()
 
-def enhance_brightness(input_path, output_path, factor=2):
-    img = Image.open(input_path)
-    enhancer = ImageEnhance.Brightness(img)
-    brighter_img = enhancer.enhance(factor)
-    brighter_img.save(output_path)
-
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
@@ -36,7 +30,7 @@ async def cmd_start(message: types.Message):
 
 @router.message(lambda message: message.text == "💰 Совершить обмен")
 async def exchange_main(message: types.Message):
-    logging.info(f"User {get_user_display(message.from_user)} выбрал 'Совершить обмен'.")
+    logging.info(f"User '{get_user_display(message.from_user)}' выбрал 'Совершить обмен'.")
     await message.answer(
         "Выберите валюту, которую вы желаете получить:",
         reply_markup=get_exchange_main_keyboard()
@@ -44,7 +38,7 @@ async def exchange_main(message: types.Message):
 
 @router.callback_query(lambda c: c.data == "exchange_main")
 async def exchange_main_back(callback_query: types.CallbackQuery):
-    logging.info(f"User {get_user_display(callback_query.from_user)} вернулся в главное меню.")
+    logging.info(f"User '{get_user_display(callback_query.from_user)}' вернулся в главное меню.")
     await callback_query.message.edit_text(
         "Выберите валюту, которую вы желаете получить:",
         reply_markup=get_exchange_main_keyboard()
@@ -52,7 +46,7 @@ async def exchange_main_back(callback_query: types.CallbackQuery):
 
 @router.callback_query(lambda c: c.data == "exchange_rub")
 async def exchange_rub(callback_query: types.CallbackQuery):
-    logging.info(f"User {get_user_display(callback_query.from_user)} выбрал обмен RUB.")
+    logging.info(f"User '{get_user_display(callback_query.from_user)}' выбрал обмен RUB.")
     await callback_query.message.edit_text(
         "RUB\nВыберите направление обмена:",
         reply_markup=get_rub_directions_keyboard()
@@ -60,7 +54,7 @@ async def exchange_rub(callback_query: types.CallbackQuery):
 
 @router.callback_query(lambda c: c.data == "exchange_thb")
 async def exchange_thb(callback_query: types.CallbackQuery):
-    logging.info(f"User {get_user_display(callback_query.from_user)} выбрал обмен THB.")
+    logging.info(f"User '{get_user_display(callback_query.from_user)}' выбрал обмен THB.")
     await callback_query.message.edit_text(
         "THB\nВыберите направление обмена:",
         reply_markup=get_thb_directions_keyboard()
@@ -68,7 +62,7 @@ async def exchange_thb(callback_query: types.CallbackQuery):
 
 @router.callback_query(lambda c: c.data == "exchange_usdt")
 async def exchange_usdt(callback_query: types.CallbackQuery):
-    logging.info(f"User {get_user_display(callback_query.from_user)} выбрал обмен USDT.")
+    logging.info(f"User '{get_user_display(callback_query.from_user)}' выбрал обмен USDT.")
     await callback_query.message.edit_text(
         "USDT TRC20\nВыберите направление обмена:",
         reply_markup=get_usdt_directions_keyboard()
