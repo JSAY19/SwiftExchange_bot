@@ -45,7 +45,7 @@ class UserTable(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tg_id = mapped_column(BigInteger)
-    name: Mapped[str] = mapped_column(nullable=True)
+    username: Mapped[str] = mapped_column(nullable=True)
     role: Mapped[Role]
 
 
@@ -62,6 +62,7 @@ class ExchangeHistoryTable(Base):
 
 async def async_main():
     async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
 
