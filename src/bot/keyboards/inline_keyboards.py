@@ -65,3 +65,13 @@ def get_thb_to_rub_keyboard():
             [InlineKeyboardButton(text="Назад", callback_data="rub_to_thb")]
         ]
     )
+
+def get_profile_main_user_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="История обменов", callback_data="history_exchanges")],
+            [InlineKeyboardButton(text="Оставить отзыв", callback_data="go_to_review")],
+            [InlineKeyboardButton(text="Поддержка", callback_data="support_main")]
+        ]
+    )
+

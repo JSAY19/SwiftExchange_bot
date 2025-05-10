@@ -1,7 +1,7 @@
 from aiogram import Router, types, F
 from aiogram.filters import Command
 from src.bot.keyboards.reply_keyboards import get_main_keyboard
-from src.bot.keyboards.inline_keyboards import get_exchange_main_keyboard, get_usdt_rub_directions_keyboard, get_exchange_type_keyboard, get_usdt_to_thb_keyboard, get_thb_to_usdt_keyboard, get_exchange_type_keyboard_rub_to_thb, get_rub_to_thb_keyboard, get_thb_to_rub_keyboard
+import src.bot.keyboards.inline_keyboards as inline_keyboards
 from datetime import datetime, timedelta
 import asyncio
 from aiogram.fsm.context import FSMContext
@@ -41,7 +41,7 @@ async def exchange_main(message: types.Message):
         logging.info(f"User '{get_user_display(message.from_user)}' выбрал 'Совершить обмен'.")
         await message.answer(
             "Выберите валюту, которую вы желаете получить:",
-            reply_markup=get_exchange_main_keyboard()
+            reply_markup=inline_keyboards.get_exchange_main_keyboard()
         )
     except Exception as e:
         logging.error(f"Ошибка в exchange_main: {str(e)}")
@@ -53,7 +53,7 @@ async def exchange_main_back(callback_query: types.CallbackQuery):
         logging.info(f"User '{get_user_display(callback_query.from_user)}' вернулся в главное меню.")
         await callback_query.message.edit_text(
             "Выберите валюту, которую вы желаете получить:",
-            reply_markup=get_exchange_main_keyboard()
+            reply_markup=inline_keyboards.get_exchange_main_keyboard()
         )
         await callback_query.answer()
     except Exception as e:
@@ -72,7 +72,7 @@ async def exchange_usdt(callback_query: types.CallbackQuery):
         logging.info(f"User '{get_user_display(callback_query.from_user)}' выбрал обмен USDT or RUB.")
         await callback_query.message.edit_text(
             "THB\nВыберите направление обмена:",
-            reply_markup=get_usdt_rub_directions_keyboard()
+            reply_markup=inline_keyboards.get_usdt_rub_directions_keyboard()
         )
         await callback_query.answer()
     except Exception as e:
@@ -95,7 +95,7 @@ async def usdt_to_thb(callback_query: types.CallbackQuery):
             "🏢 <b>В отеле</b>\n"
             "Мин. сумма: 🎉✨✨\n"
             "Макс. сумма: 🎉✨✨",
-            reply_markup=get_exchange_type_keyboard(),
+            reply_markup=inline_keyboards.get_exchange_type_keyboard(),
             parse_mode="HTML"
         )
         await callback_query.answer()
@@ -129,7 +129,7 @@ async def show_atm_or_hotel(callback_query: types.CallbackQuery, state: FSMConte
     )
     await callback_query.message.edit_text(
         text,
-        reply_markup=get_usdt_to_thb_keyboard(),
+        reply_markup=inline_keyboards.get_usdt_to_thb_keyboard(),
         parse_mode="HTML"
     )
     await callback_query.answer()
@@ -142,10 +142,10 @@ async def show_amount(callback_query: types.CallbackQuery, state: FSMContext):
 
     if callback_query.data == "enter_thb_amount":
         currency_text = "Введите сумму THB (Баты), которую вы хотите получить:"
-        reply_markup = get_thb_to_usdt_keyboard()
+        reply_markup = inline_keyboards.get_thb_to_usdt_keyboard()
     else:
         currency_text = "Введите сумму USDT, которую вы хотите обменять:"
-        reply_markup = get_usdt_to_thb_keyboard()
+        reply_markup = inline_keyboards.get_usdt_to_thb_keyboard()
 
     text = (
         "<b>Обмен</b>\n\n"
@@ -181,7 +181,7 @@ async def rub_to_thb(callback_query: types.CallbackQuery):
             "🏢 <b>В отеле</b>\n"
             "Мин. сумма: 🎉✨✨\n"
             "Макс. сумма: 🎉✨✨",
-            reply_markup=get_exchange_type_keyboard_rub_to_thb(),
+            reply_markup=inline_keyboards.get_exchange_type_keyboard_rub_to_thb(),
             parse_mode="HTML"
         )
         await callback_query.answer()
@@ -213,7 +213,7 @@ async def show_atm_or_hotel(callback_query: types.CallbackQuery, state: FSMConte
     )
     await callback_query.message.edit_text(
         text,
-        reply_markup=get_rub_to_thb_keyboard(),
+        reply_markup=inline_keyboards.get_rub_to_thb_keyboard(),
         parse_mode="HTML"
     )
     await callback_query.answer()
@@ -225,10 +225,10 @@ async def show_amount(callback_query: types.CallbackQuery, state: FSMContext):
 
     if callback_query.data == "enter_thb_amount_rub":
         currency_text = "Введите сумму THB (Баты), которую вы хотите получить:"
-        reply_markup = get_thb_to_rub_keyboard()
+        reply_markup = inline_keyboards.get_thb_to_rub_keyboard()
     else:
         currency_text = "Введите сумму RUB, которую вы хотите обменять:"
-        reply_markup = get_rub_to_thb_keyboard()
+        reply_markup = inline_keyboards.get_rub_to_thb_keyboard()
 
     text = (
         "<b>Обмен</b>\n\n"
@@ -246,3 +246,20 @@ async def show_amount(callback_query: types.CallbackQuery, state: FSMContext):
         parse_mode="HTML"
     )
     await callback_query.answer()
+
+
+@router.message(F.text == "👩‍💻 Профиль")
+async def get_profile_main(message: types.Message):
+    try:
+        logging.info(f"User '{get_user_display(message.from_user)}' выбрал 'Профиль'.")
+        await message.answer(
+            f"💢Ваш профиль💢\n\n💫Ваш id: {message.from_user.id}\n 💫Количество успешных обменов: 🎈🎈 \n",
+            reply_markup=inline_keyboards.get_profile_main_user_keyboard()
+        )
+    except Exception as e:
+        logging.error(f"Ошибка в get_profile_main: {str(e)}")
+        try:
+            await message.answer("Произошла ошибка. Попробуйте снова.")
+        except:
+            logging.error("Не удалось отправить ответ на message")
+
