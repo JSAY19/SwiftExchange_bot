@@ -70,8 +70,16 @@ def get_profile_main_user_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="История обменов", callback_data="history_exchanges")],
-            [InlineKeyboardButton(text="Оставить отзыв", callback_data="go_to_review")],
+            [InlineKeyboardButton(text="Оставить отзыв", url="https://t.me/+w1iU4eQUG_oyYTIy")],
             [InlineKeyboardButton(text="Поддержка", callback_data="support_main")]
+        ]
+    )
+
+def get_confirm_exchange_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Подтвердить", callback_data="confirm_exchange")],
+            [InlineKeyboardButton(text="Отменить", callback_data="cancel_exchange")]
         ]
     )
 

@@ -38,7 +38,7 @@ async def main():
             if retry_count >= max_retries:
                 retry_count = 0
                 logging.warning(f"Достигнуто максимальное количество попыток. Сброс счетчика и увеличение таймаута.")
-                retry_timeout = min(retry_timeout * 2, 90)  # Увеличиваем таймаут, но не более 5 минут
+                retry_timeout = min(retry_timeout * 2, 90)  # Увеличиваем таймаут, но не более 1.5 минут
             
             logging.info(f"Повторное подключение через {retry_timeout} секунд...")
             await asyncio.sleep(retry_timeout)

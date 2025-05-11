@@ -39,7 +39,6 @@ class Currency(enum.Enum):
     usdt = "USDT"
 
 
-
 class UserTable(Base):
     __tablename__ = 'users'
 
@@ -59,6 +58,7 @@ class ExchangeHistoryTable(Base):
     currency_from: Mapped[str]
     date: Mapped[datetime.datetime] = mapped_column(server_default=text("TIMEZONE('utc', now())"))
     user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'))
+
 
 async def async_main():
     async with engine.begin() as conn:

@@ -1,3 +1,7 @@
 aiogram>=3.0.0
 python-dotenv>=0.19.0
-colorlog 
+colorlog~=6.9.0
+SQLAlchemy~=2.0.40
+python-decouple~=3.8
+aiohttp>=3.8.0
+beautifulsoup4>=4.9.3

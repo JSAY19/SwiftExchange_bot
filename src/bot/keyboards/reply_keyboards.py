@@ -10,6 +10,9 @@ def get_main_keyboard():
             [
                 KeyboardButton(text="💸 Курсы обмена", callback_data="exchange_courses_main"),
                 KeyboardButton(text="💬 Поддержка", callback_data="support_main")
+            ],
+            [
+                KeyboardButton(text="✨ Отзывы", callback_data="reviews_main")
             ]
         ],
         resize_keyboard=True
