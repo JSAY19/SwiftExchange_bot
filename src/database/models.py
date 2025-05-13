@@ -4,13 +4,11 @@ import asyncio
 import datetime
 from sqlalchemy import BigInteger, ForeignKey, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine, async_session
+from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
 
 DATABASE_URL = config("DATABASE_URL")
 
-print(DATABASE_URL)
-
-engine = create_async_engine(DATABASE_URL, echo=True)
+engine = create_async_engine(DATABASE_URL, echo=False)
 
 async_session_ = async_sessionmaker(engine)
 
@@ -20,23 +18,18 @@ class Base(AsyncAttrs, DeclarativeBase):
 
 
 class Role(enum.Enum):
-    admin = "admin"
-    manager = "manager"
-    client = "client"
+    admin = "Админ"
+    manager = "Менеджер"
+    client = "Клиент"
 
 
 class Status(enum.Enum):
-    creation = "creation"
-    pending_payment = "pending payment"
-    processing = "processing"
-    successful = "successful"
-    canceled = "canceled"
-
-
-class Currency(enum.Enum):
-    rub = "RUB"
-    thb = "THB"
-    usdt = "USDT"
+    creation = "Создание"
+    pending_payment = "Ожидание оплаты"
+    processing = "Обработка"
+    successful = "Успешно"
+    canceled = "Отменен"
+    pending_get = "Ожидание получения"
 
 
 class UserTable(Base):
@@ -56,6 +49,8 @@ class ExchangeHistoryTable(Base):
     rate: Mapped[str]
     currency_to: Mapped[str]
     currency_from: Mapped[str]
+    get: Mapped[float]
+    give: Mapped[float]
     date: Mapped[datetime.datetime] = mapped_column(server_default=text("TIMEZONE('utc', now())"))
     user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'))
 
