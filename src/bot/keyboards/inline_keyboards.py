@@ -1,4 +1,5 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 def get_exchange_main_keyboard():
     return InlineKeyboardMarkup(
@@ -82,4 +83,21 @@ def get_confirm_exchange_keyboard():
             [InlineKeyboardButton(text="Отменить", callback_data="cancel_exchange")]
         ]
     )
+
+def get_cancel_exchange_keyboard():
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="❌ Отменить обмен", callback_data="cancel_exchange")
+    return keyboard.as_markup()
+
+def get_manager_action_keyboard(request_id: str):
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="✅ Подтвердить", callback_data=f"manager_confirm_{request_id}")
+    keyboard.button(text="❌ Отклонить", callback_data=f"manager_reject_{request_id}")
+    return keyboard.as_markup()
+
+def get_receipt_confirmation_keyboard():
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="✅ Получил", callback_data="receipt_confirmed")
+    keyboard.button(text="❓ Связаться с поддержкой", callback_data="support_contact")
+    return keyboard.as_markup()
 
