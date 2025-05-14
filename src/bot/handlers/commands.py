@@ -156,6 +156,23 @@ async def go_to_reviews(message: types.Message):
     )
 
 
+@router.message(F.text == "💸 Курсы обмена")
+async def show_actual_exchange_rates(message: types.Message, state: FSMContext):
+    rates = await update_and_store_rates_in_fsm(state)
+    if not rates:
+        await message.answer("Не удалось получить актуальные курсы. Попробуйте позже.")
+        return
+    usdt_thb = rates.get('USDT/THB')
+    rub_thb = rates.get('RUB/THB')
+    text = (
+        "💸 <b>Актуальные курсы обмена:</b>\n\n"
+        f"1 USDT = <b>{usdt_thb:.2f} THB</b>\n"
+        f"1 RUB = <b>{rub_thb:.4f} THB</b>\n\n"
+        "Курсы обновляются автоматически при каждом обмене."
+    )
+    await message.answer(text, parse_mode="HTML")
+
+
 # -------------------- Сценарий обмена --------------------
 
 @router.callback_query(F.data == "exchange_usdt_or_rub")
@@ -391,7 +408,7 @@ async def switch_input_currency_handler(callback_query: types.CallbackQuery, sta
             text_parts.append(safe_network_text)
         text_parts.extend([
             "💰 Мин. сумма для обмена без доп. комиссии: 10000 THB",
-            "(Если сумма к получению < 10000 THB, будет добавлена комиссия 300 THB к сумме, которую вы отдаете)",
+            "(Если сумма к получению &lt; 10000 THB, будет добавлена комиссия 300 THB к сумме, которую вы отдаете)",
             f"<b>❕ Введите сумму {safe_prompt_currency}:</b>"
         ])
         text = "\n\n".join(text_parts)
@@ -561,7 +578,7 @@ async def confirm_exchange_handler(callback_query: types.CallbackQuery, state: F
                 f"💸 Сумма к оплате: <b>{amount_to_give:.2f} USDT</b>\n"
                 f"💰 Вы получите: <b>{amount_to_get:.2f} THB</b>\n\n"
                 "📝 <b>USDT (TRC20)</b>\n"
-                "Кошелек: <code>ВАШ_USDT_КОШЕЛЕК_TRC20</code>\n"  # ЗАМЕНИТЬ
+                "Кошелек: <code>TMjRsz5SZ16adPMf11QQNZDHYkwQ58nSDd</code>\n"  # ЗАМЕНИТЬ
                 "Сеть: TRC20\n\n"
                 "⚠️ После оплаты, пожалуйста, отправьте скриншот подтверждения перевода в этот чат."
             )
@@ -571,9 +588,9 @@ async def confirm_exchange_handler(callback_query: types.CallbackQuery, state: F
                 f"💸 Сумма к оплате: <b>{amount_to_give:.2f} RUB</b>\n"
                 f"💰 Вы получите: <b>{amount_to_get:.2f} THB</b>\n\n"
                 "📝 <b>Рублевый перевод</b>\n"
-                "Номер: <code>ВАШ_НОМЕР_КАРТЫ_ИЛИ_ТЕЛЕФОНА</code>\n"  # ЗАМЕНИТЬ
-                "Банки: Сбербанк, Альфа, Тинькофф (или ваши банки)\n"
-                "Получатель: ИМЯ ФАМИЛИЯ ПОЛУЧАТЕЛЯ\n\n"  # ЗАМЕНИТЬ
+                "Номер: <code>+79263691059</code>\n"  # ЗАМЕНИТЬ
+                "Банки: Сбербанк, Альфа, Тинькофф\n"
+                "Получатель: Виталий Водолазов\n\n"  # ЗАМЕНИТЬ
                 "⚠️ После оплаты, пожалуйста, отправьте скриншот подтверждения перевода в этот чат."
             )
 
@@ -662,6 +679,80 @@ async def handle_payment_screenshot(message: types.Message, state: FSMContext):
         await state.clear()
 
 
+@router.message(F.document, StateFilter("waiting_for_payment_screenshot"))
+async def handle_payment_document(message: types.Message, state: FSMContext):
+    try:
+        data = await state.get_data()
+        user_tg_id = message.from_user.id
+        username = message.from_user.username or f"id{user_tg_id}"
+
+        request_id = data.get("request_id")
+        receive_type = data.get("receive_type", "Не указан")
+        currency_from = data.get("currency_from")
+        currency_to = data.get("currency_to")
+        amount_to_give = data.get("final_amount_to_give")
+        amount_to_get = data.get("final_amount_to_get")
+        actual_rate_str = data.get("exchange_rate_str")
+        final_commission_text = data.get("final_commission_text", "")
+
+        if not request_id:
+            logging.error(f"Критическая ошибка: request_id не найден в FSM для {user_tg_id} при отправке документа.")
+            await message.answer("Произошла внутренняя ошибка. Пожалуйста, свяжитесь с поддержкой.",
+                                 reply_markup=get_main_keyboard())
+            await state.clear()
+            return
+
+        # Проверяем расширение файла
+        allowed_exts = {"pdf", "jpg", "jpeg", "png", "heic", "webp"}
+        file_ext = (message.document.file_name or "").split(".")[-1].lower()
+        if file_ext not in allowed_exts:
+            await message.answer("Пожалуйста, отправьте документ в одном из поддерживаемых форматов: PDF, JPG, JPEG, PNG, HEIC, WEBP.")
+            return
+
+        await db.update_exchange_request_data(request_id=request_id, status=db.Status.processing)
+
+        safe_username = html.escape(username)
+        safe_currency_from = html.escape(currency_from)
+        safe_currency_to = html.escape(currency_to)
+        safe_receive_type = html.escape(receive_type)
+        safe_actual_rate_str = html.escape(actual_rate_str)
+        safe_commission_text = html.escape(final_commission_text)
+
+        text_for_manager = (
+            f"💌 Новая заявка #{request_id} ожидает обработки!\n\n"
+            f"💨 Пользователь: @{safe_username} (tg_id: {user_tg_id})\n"
+            f"💱 Направление: {safe_currency_from} → {safe_currency_to}\n"
+            f"🏦 Способ получения: {safe_receive_type}\n"
+            f"Курс: 1 {safe_currency_from} = {safe_actual_rate_str} {safe_currency_to}\n"
+            f"💸 Отдал: {amount_to_give:.2f} {safe_currency_from}{safe_commission_text}\n"
+            f"💰 К получению: {amount_to_get:.2f} {safe_currency_to}\n"
+        )
+
+        # Отправляем документ и текст менеджеру
+        await message.bot.send_document(
+            chat_id=MANAGER_CHAT_ID,
+            document=message.document.file_id,
+        )
+        await message.bot.send_message(
+            chat_id=MANAGER_CHAT_ID,
+            text=text_for_manager,
+            reply_markup=inline_keyboards.get_manager_action_keyboard(str(request_id))
+        )
+
+        await message.answer(
+            "✅ Ваш документ получен и заявка отправлена на обработку менеджеру! Ожидайте дальнейших инструкций.\n\n"
+            "Если возникнут какие-либо вопросы, с вами свяжется менеджер.",
+            reply_markup=get_main_keyboard()
+        )
+        await state.clear()
+
+    except Exception as e:
+        logging.exception(f"Ошибка при обработке документа оплаты:")
+        await message.answer("Произошла ошибка при обработке вашего документа. Пожалуйста, свяжитесь с поддержкой.",
+                             reply_markup=get_main_keyboard())
+        await state.clear()
+
+
 @router.callback_query(F.data.startswith("manager_confirm_"))
 async def handle_manager_confirm(callback_query: types.CallbackQuery):
     try:
@@ -685,7 +776,7 @@ async def handle_manager_confirm(callback_query: types.CallbackQuery):
 
         await callback_query.bot.send_message(
             user_id_to_notify,
-            f"✅ Ваша заявка #{request_id} подтверждена менеджером! Средства готовы к выдаче."
+            f"✅ Ваша заявка #{request_id} подтверждена менеджером! Средства готовы к выдаче.\nНиже представлены инструкции по получению средств. Ожидайте 4 файла с видео и фото."
         )
 
         message_text_for_manager = callback_query.message.text  # Текст исходного сообщения менеджеру
@@ -700,7 +791,7 @@ async def handle_manager_confirm(callback_query: types.CallbackQuery):
             await callback_query.bot.send_message(
                 user_id_to_notify,
                 "🏨 <b>Инструкция по получению в отеле:</b>\n\n"
-                "1. Придите по адресу: <a href='https://maps.app.goo.gl/YUBKHTMEw29DJby18'>Отель \"Название Отеля\"</a>\n"  # ЗАМЕНИТЬ
+                "1. Придите по адресу: <a href='https://maps.app.goo.gl/YUBKHTMEw29DJby18'>Отель \"Centerpoint\"</a>\n"  # ЗАМЕНИТЬ
                 "2. Покажите на рецепшене это сообщение или ваш ID заявки.\n"
                 "3. Получите ваши средства.",
                 parse_mode="HTML"
@@ -731,7 +822,7 @@ async def handle_manager_confirm(callback_query: types.CallbackQuery):
 
         await callback_query.bot.send_message(
             user_id_to_notify,
-            f"Пожалуйста, подтвердите получение средств по заявке #{request_id}:",
+            f"Пожалуйста, когда получите средства, подтвердите получение средств по заявке #{request_id}: нажав на кнопку '✅ Получил'\n До момента получения средств, не нажимайте на кнопку '✅ Получил'",
             reply_markup=inline_keyboards.get_receipt_confirmation_keyboard(request_id)
         )
         await callback_query.answer()
@@ -822,7 +913,7 @@ async def handle_support_contact(callback_query: types.CallbackQuery):
 
         await safe_edit_text(
             callback_query.message,
-            "👨‍💼 Свяжитесь с поддержкой: @ВАШ_САППОРТ_ЮЗЕРНЕЙМ\n\n"  # ЗАМЕНИТЬ
+            "👨‍💼 Свяжитесь с поддержкой: @mcqueenyy\n\n"  # ЗАМЕНИТЬ
             f"Пожалуйста, укажите номер вашей заявки: #{request_id}\n\n"
             "Вы можете вернуться к подтверждению получения средств:",
             reply_markup=inline_keyboards.get_receipt_confirmation_keyboard(request_id)
@@ -978,3 +1069,12 @@ async def back_to_profile_handler(callback_query: types.CallbackQuery):
     except Exception as e:
         logging.error(f"Ошибка в back_to_profile_handler: {str(e)}")
         await callback_query.answer("Произошла ошибка.")
+
+
+@router.message(F.text == "💬 Поддержка")
+async def support_main_handler(message: types.Message):
+    await message.answer(
+        "👨‍💼 Связаться с поддержкой: [@mcqueenyy](https://t.me/mcqueenyy)\n\n"
+        "Нажмите на ссылку, чтобы открыть чат с поддержкой.",
+        parse_mode="Markdown"
+    )
