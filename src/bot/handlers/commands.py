@@ -168,7 +168,7 @@ async def go_to_reviews(message: types.Message):
 # -------------------- Сценарий обмена --------------------
 
 @router.callback_query(F.data == "exchange_usdt_or_rub")
-async def exchange_usdt_or_rub_handler(callback_query: types.CallbackQuery, state: FSMContext):  # Добавил state
+async def exchange_usdt_or_rub_handler(callback_query: types.CallbackQuery, state: FSMContext):
     try:
         logging.info(f"User '{get_user_display(callback_query.from_user)}' выбрал обмен USDT or RUB.")
         # Обновляем курсы на этом шаге
@@ -315,7 +315,7 @@ async def select_receive_type_handler(callback_query: types.CallbackQuery, state
         safe_input_prompt = html.escape(input_currency_prompt_val)
 
         text_parts = [
-            f"💱 <b>Обмен</b>",
+            "💱 <b>Обмен</b>",
             f"💨 {safe_receive_type}",
             f"💱 Курс для обмена: <b>{safe_display_rate}</b> (зафиксирован)",
         ]
@@ -323,9 +323,8 @@ async def select_receive_type_handler(callback_query: types.CallbackQuery, state
             text_parts.append(safe_network_info)
 
         text_parts.extend([
-            f"💰 Мин. сумма для обмена без доп. комиссии: 10000 THB",
-            f"(Если сумма к получению < 10000 THB, будет добавлена комиссия 300 THB к сумме, которую вы отдаете)",
-            # Заменил < на < вручную
+            "💰 Мин. сумма для обмена без доп. комиссии: 10000 THB",
+            "(Если сумма к получению &lt; 10000 THB, будет добавлена комиссия 300 THB к сумме, которую вы отдаете)",
             f"<b>❕ Введите сумму {safe_input_prompt}:</b>"
         ])
 
@@ -392,12 +391,12 @@ async def switch_input_currency_handler(callback_query: types.CallbackQuery, sta
             # network_text = "" # Уже инициализирован
 
         text = (
-            f"💱 <b>Обмен</b>\n\n"
+            "💱 <b>Обмен</b>\n\n"
             f"💨 {receive_type}\n"
             f"💱 Курс для обмена: <b>{display_rate_text_for_deal}</b> (зафиксирован)\n"
             f"{network_text}"
-            f"💰 Мин. сумма для обмена без доп. комиссии: 10000 THB\n"
-            f"(Если сумма к получению < 10000 THB, будет добавлена комиссия 300 THB к сумме, которую вы отдаете)\n\n"
+            "💰 Мин. сумма для обмена без доп. комиссии: 10000 THB\n"
+            "(Если сумма к получению &lt; 10000 THB, будет добавлена комиссия 300 THB к сумме, которую вы отдаете)\n\n"
             f"<b>❕ Введите сумму {prompt_currency}:</b>"
         )
 
