@@ -1,10 +1,10 @@
-#-------------------- Импорты и константы - -------------------
+# -------------------- Импорты и константы --------------------
 from aiogram import Router, types, F
 import aiohttp
-import html
+import html  # Добавил импорт html для экранирования
 # Предполагаем, что CoinGeckoClient находится в src.services.coingecko_client (или укажите правильный путь)
 # Проверьте, что путь импорта CoinGeckoClient верный
-from src.services.CoinGecko import CoinGeckoClient  # ИЗМЕНЕНО: Путь к вашему клиенту
+from src.services.CoinGecko import CoinGeckoClient
 from aiogram.filters import Command, StateFilter
 from src.bot.keyboards.reply_keyboards import get_main_keyboard
 import src.bot.keyboards.inline_keyboards as inline_keyboards
@@ -20,12 +20,8 @@ from .colors_logs import get_user_display
 import os
 import logging
 
-# Удаляем глобальные константы для курсов, они теперь будут в FSM
-# USDT_TO_THB_RATE = 36.50
-# RUB_TO_THB_RATE = 0.41
-
 # Глобальные переменные для клиента API и сессии
-# Инициализируются в on_startup
+# Инициализируются в on_startup (см. конец файла с примером)
 aiohttp_session_global: aiohttp.ClientSession | None = None
 coingecko_client_global: CoinGeckoClient | None = None
 
@@ -41,7 +37,6 @@ async def update_and_store_rates_in_fsm(state: FSMContext, client: CoinGeckoClie
     Получает актуальные курсы с CoinGecko и сохраняет их в FSM.
     Возвращает словарь с курсами или None в случае ошибки.
     """
-    # Используем переданный клиент или глобальный, если не передан
     current_client = client if client else coingecko_client_global
 
     if not current_client:
@@ -50,19 +45,21 @@ async def update_and_store_rates_in_fsm(state: FSMContext, client: CoinGeckoClie
         return None
 
     try:
-        rates = await current_client.get_rate()  # Ожидаем {'USDT/THB': ..., 'RUB/THB': ...}
-        if not rates or not isinstance(rates, dict) or 'USDT/THB' not in rates or 'RUB/THB' not in rates:
+        rates = await current_client.get_rate()
+        if rates and isinstance(rates, dict) and 'USDT/THB' in rates and 'RUB/THB' in rates:
+            usdt_thb_rate = rates.get('USDT/THB')
+            rub_thb_rate = rates.get('RUB/THB')
+
+            await state.update_data(
+                current_usdt_thb_rate=usdt_thb_rate,
+                current_rub_thb_rate=rub_thb_rate,
+            )
+            logging.info(f"Курсы обновлены и сохранены в FSM: USDT/THB={usdt_thb_rate}, RUB/THB={rub_thb_rate}")
+            return {'USDT/THB': usdt_thb_rate, 'RUB/THB': rub_thb_rate}
+        else:
             logging.warning(f"Не удалось получить корректные курсы от CoinGecko. Ответ: {rates}")
             await state.update_data(current_usdt_thb_rate=None, current_rub_thb_rate=None)
             return None
-        usdt_thb_rate = rates.get('USDT/THB')
-        rub_thb_rate = rates.get('RUB/THB')
-        await state.update_data(
-            current_usdt_thb_rate=usdt_thb_rate,
-            current_rub_thb_rate=rub_thb_rate,
-        )
-        logging.info(f"Курсы обновлены и сохранены в FSM: USDT/THB={usdt_thb_rate}, RUB/THB={rub_thb_rate}")
-        return {'USDT/THB': usdt_thb_rate, 'RUB/THB': rub_thb_rate}
     except Exception as e:
         logging.error(f"Ошибка при получении или сохранении курсов: {e}")
         await state.update_data(current_usdt_thb_rate=None, current_rub_thb_rate=None)
@@ -78,13 +75,13 @@ async def cmd_start(message: types.Message):
         username = message.from_user.username
         await db.set_user(tg_id=tg_id, username=username)
 
-        output_path = "pictures/XchangerBot_bright.png"
+        output_path = "pictures/XchangerBot_bright.png"  # Убедитесь, что путь существует
         photo = FSInputFile(output_path)
         await message.answer_photo(
             photo=photo,
             caption="🏦 Мы предлагаем надёжные, оперативные и полностью автоматизированные услуги обмена российских рублей, USDT, THB.\n"
                     "💎 Приоритет №1 — качество нашего сервиса. Мы высоко ценим каждого нашего клиента и стремимся сделать процесс обмена максимально удобным и быстрым, чтобы Вы всегда возвращались к нам.\n"
-                    "💬 → Техническая поддержка: @ТЕХ_ПОДДЕРЖКА",  # ЗАМЕНИТЬ
+                    "💬 → Техническая поддержка: @mcqueenyy",  # ЗАМЕНИТЬ
             reply_markup=get_main_keyboard()
         )
     except FileNotFoundError:
@@ -116,12 +113,10 @@ async def exchange_main(message: types.Message, state: FSMContext):
 
 
 @router.callback_query(F.data == "exchange_main")
-async def exchange_main_back(callback_query: types.CallbackQuery, state: FSMContext):  # Добавил state
-    # При возврате в главное меню обмена, также обновим курсы
+async def exchange_main_back(callback_query: types.CallbackQuery, state: FSMContext):
     actual_rates = await update_and_store_rates_in_fsm(state)
     if not actual_rates:
         await callback_query.answer("Не удалось обновить курсы. Попробуйте еще раз.", show_alert=True)
-        # Можно вернуть пользователя на предыдущий шаг или в главное меню
         return
 
     await safe_edit_text(
@@ -167,7 +162,6 @@ async def go_to_reviews(message: types.Message):
 async def exchange_usdt_or_rub_handler(callback_query: types.CallbackQuery, state: FSMContext):
     try:
         logging.info(f"User '{get_user_display(callback_query.from_user)}' выбрал обмен USDT or RUB.")
-        # Обновляем курсы на этом шаге
         actual_rates = await update_and_store_rates_in_fsm(state)
         if not actual_rates:
             await callback_query.answer("Не удалось получить актуальные курсы. Попробуйте позже.", show_alert=True)
@@ -189,10 +183,10 @@ async def usdt_to_thb_handler(callback_query: types.CallbackQuery, state: FSMCon
     try:
         logging.info(f"User '{get_user_display(callback_query.from_user)}' выбрал USDT → THB.")
 
-        data = await state.get_data()  # Получаем FSM data, где уже должен быть курс
+        data = await state.get_data()
         current_usdt_thb = data.get('current_usdt_thb_rate')
 
-        if current_usdt_thb is None:  # Если вдруг курса нет, пытаемся обновить
+        if current_usdt_thb is None:
             updated_rates = await update_and_store_rates_in_fsm(state)
             if not updated_rates or updated_rates.get('USDT/THB') is None:
                 await callback_query.answer("Не удалось получить актуальный курс USDT/THB. Попробуйте позже.",
@@ -200,11 +194,10 @@ async def usdt_to_thb_handler(callback_query: types.CallbackQuery, state: FSMCon
                 return
             current_usdt_thb = updated_rates.get('USDT/THB')
 
-        # Фиксируем курс для этой конкретной сессии обмена
         await state.update_data(
             currency_from="USDT",
             currency_to="THB",
-            exchange_rate_str=str(current_usdt_thb),  # Это курс, по которому будет сделка
+            exchange_rate_str=str(current_usdt_thb),
             request_id=None
         )
 
@@ -244,7 +237,7 @@ async def rub_to_thb_handler(callback_query: types.CallbackQuery, state: FSMCont
         await state.update_data(
             currency_from="RUB",
             currency_to="THB",
-            exchange_rate_str=str(current_rub_thb),  # Фиксируем курс для сделки
+            exchange_rate_str=str(current_rub_thb),
             request_id=None
         )
 
@@ -336,7 +329,6 @@ async def select_receive_type_handler(callback_query: types.CallbackQuery, state
             parse_mode="HTML"
         )
         await callback_query.answer()
-
     except Exception as e:
         logging.exception(f"Ошибка в select_receive_type_handler для user {callback_query.from_user.id}:")
         await callback_query.answer("Произошла ошибка при выборе способа получения. Попробуйте снова.")
@@ -351,7 +343,7 @@ async def switch_input_currency_handler(callback_query: types.CallbackQuery, sta
         currency_from = data.get("currency_from", "N/A")
         fixed_rate_for_deal_str = data.get("exchange_rate_str")
 
-        if not fixed_rate_for_deal_str:  # Дополнительная проверка
+        if not fixed_rate_for_deal_str:
             await callback_query.answer("Ошибка: курс для обмена не установлен. Попробуйте начать заново.",
                                         show_alert=True)
             return
@@ -360,7 +352,7 @@ async def switch_input_currency_handler(callback_query: types.CallbackQuery, sta
         reply_markup_val = None
         prompt_currency = ""
         display_rate_text_for_deal = ""
-        network_text = ""
+        network_text_val = ""  # Изменил имя
 
         if currency_from == "USDT":
             display_rate_text_for_deal = f"1 USDT = {fixed_rate_for_deal_float:.2f} THB"
@@ -368,11 +360,11 @@ async def switch_input_currency_handler(callback_query: types.CallbackQuery, sta
                 await state.update_data(input_type="input_thb")
                 prompt_currency = "THB, которую вы хотите получить"
                 reply_markup_val = inline_keyboards.get_thb_to_usdt_keyboard()
-            else:  # enter_usdt_amount
+            else:
                 await state.update_data(input_type="input_usdt")
                 prompt_currency = "USDT, которую вы хотите обменять"
                 reply_markup_val = inline_keyboards.get_usdt_to_thb_keyboard()
-            network_text = "✔ Сеть: TRC20\n"
+            network_text_val = "✔ Сеть: TRC20"
 
         elif currency_from == "RUB":
             display_rate_text_for_deal = f"1 RUB = {fixed_rate_for_deal_float:.4f} THB"
@@ -380,21 +372,29 @@ async def switch_input_currency_handler(callback_query: types.CallbackQuery, sta
                 await state.update_data(input_type="input_thb")
                 prompt_currency = "THB, которую вы хотите получить"
                 reply_markup_val = inline_keyboards.get_thb_to_rub_keyboard()
-            else:  # enter_rub_amount
+            else:
                 await state.update_data(input_type="input_rub")
                 prompt_currency = "RUB, которую вы хотите обменять"
                 reply_markup_val = inline_keyboards.get_rub_to_thb_keyboard()
-            # network_text = "" # Уже инициализирован
 
-        text = (
-            "💱 <b>Обмен</b>\n\n"
-            f"💨 {receive_type}\n"
-            f"💱 Курс для обмена: <b>{display_rate_text_for_deal}</b> (зафиксирован)\n"
-            f"{network_text}"
-            "💰 Мин. сумма для обмена без доп. комиссии: 10000 THB\n"
-            "(Если сумма к получению &lt; 10000 THB, будет добавлена комиссия 300 THB к сумме, которую вы отдаете)\n\n"
-            f"<b>❕ Введите сумму {prompt_currency}:</b>"
-        )
+        safe_receive_type = html.escape(receive_type)
+        safe_display_rate = html.escape(display_rate_text_for_deal)
+        safe_network_text = html.escape(network_text_val)
+        safe_prompt_currency = html.escape(prompt_currency)
+
+        text_parts = [
+            "💱 <b>Обмен</b>",
+            f"💨 {safe_receive_type}",
+            f"💱 Курс для обмена: <b>{safe_display_rate}</b> (зафиксирован)",
+        ]
+        if safe_network_text:
+            text_parts.append(safe_network_text)
+        text_parts.extend([
+            "💰 Мин. сумма для обмена без доп. комиссии: 10000 THB",
+            "(Если сумма к получению < 10000 THB, будет добавлена комиссия 300 THB к сумме, которую вы отдаете)",
+            f"<b>❕ Введите сумму {safe_prompt_currency}:</b>"
+        ])
+        text = "\n\n".join(text_parts)
 
         await safe_edit_text(
             callback_query.message,
@@ -421,8 +421,6 @@ async def handle_amount_input(message: types.Message, state: FSMContext):
         if not fixed_rate_for_calculation_str:
             logging.error(
                 f"Критическая ошибка: exchange_rate_str не найден в FSM для {message.from_user.id} на этапе ввода суммы.")
-            # Пытаемся аварийно обновить, но это не очень хорошо, т.к. пользователь видел другой курс.
-            # Лучше прервать и попросить начать заново.
             await message.answer("Произошла ошибка: курс для расчета не определен. Пожалуйста, начните обмен заново.",
                                  reply_markup=get_main_keyboard())
             await state.clear()
@@ -435,7 +433,7 @@ async def handle_amount_input(message: types.Message, state: FSMContext):
         user_tg_id = message.from_user.id
 
         receive_type = data.get("receive_type", "Не указан")
-        currency_to = data.get("currency_to")  # Должен быть "THB"
+        currency_to = data.get("currency_to")
         input_type = data.get("input_type")
 
         amount_to_give = 0.0
@@ -443,27 +441,25 @@ async def handle_amount_input(message: types.Message, state: FSMContext):
         final_commission_text = ""
         MIN_THB_FOR_NO_COMMISSION = 10000.0
         COMMISSION_THB_AMOUNT = 300.0
-        display_rate_text_for_deal = ""  # Курс, по которому идет сделка
+        display_rate_text_for_deal = ""
 
         if currency_from == "USDT":
             display_rate_text_for_deal = f"1 USDT = {current_rate_for_calc:.2f} THB"
-            if input_type == "input_thb":  # Пользователь ввел THB (сколько хочет получить)
+            if input_type == "input_thb":
                 amount_to_get = amount_entered
                 amount_to_give = amount_to_get / current_rate_for_calc
-                if amount_to_get < MIN_THB_FOR_NO_COMMISSION and amount_to_get > 0:  # Проверяем, что не 0
+                if amount_to_get < MIN_THB_FOR_NO_COMMISSION and amount_to_get > 0:
                     commission_in_usdt = COMMISSION_THB_AMOUNT / current_rate_for_calc
                     amount_to_give += commission_in_usdt
                     final_commission_text = f"\n(включая комиссию {COMMISSION_THB_AMOUNT:.0f} THB ≈ {commission_in_usdt:.2f} USDT)"
-            else:  # input_usdt. Пользователь ввел USDT (сколько хочет отдать)
+            else:
                 amount_to_give_initial = amount_entered
                 amount_to_get_calculated = amount_to_give_initial * current_rate_for_calc
                 amount_to_give = amount_to_give_initial
-                amount_to_get = amount_to_get_calculated  # Сначала считаем без комиссии
+                amount_to_get = amount_to_get_calculated
                 if amount_to_get_calculated < MIN_THB_FOR_NO_COMMISSION and amount_to_get_calculated > 0:
                     commission_in_usdt = COMMISSION_THB_AMOUNT / current_rate_for_calc
-                    amount_to_give += commission_in_usdt  # Пользователь отдает больше
-                    # amount_to_get остается тем же, что был рассчитан от amount_to_give_initial,
-                    # так как комиссия добавляется к сумме "отдаю"
+                    amount_to_give += commission_in_usdt
                     final_commission_text = f"\n(включая комиссию {COMMISSION_THB_AMOUNT:.0f} THB ≈ {commission_in_usdt:.2f} USDT)"
 
         elif currency_from == "RUB":
@@ -475,7 +471,7 @@ async def handle_amount_input(message: types.Message, state: FSMContext):
                     commission_in_rub = COMMISSION_THB_AMOUNT / current_rate_for_calc
                     amount_to_give += commission_in_rub
                     final_commission_text = f"\n(включая комиссию {COMMISSION_THB_AMOUNT:.0f} THB ≈ {commission_in_rub:.2f} RUB)"
-            else:  # input_rub
+            else:
                 amount_to_give_initial = amount_entered
                 amount_to_get_calculated = amount_to_give_initial * current_rate_for_calc
                 amount_to_give = amount_to_give_initial
@@ -485,7 +481,6 @@ async def handle_amount_input(message: types.Message, state: FSMContext):
                     amount_to_give += commission_in_rub
                     final_commission_text = f"\n(включая комиссию {COMMISSION_THB_AMOUNT:.0f} THB ≈ {commission_in_rub:.2f} RUB)"
 
-        # Проверка на минимальную сумму обмена, если есть (например, не меньше 1 THB)
         if amount_to_get <= 0 or amount_to_give <= 0:
             await message.answer("Сумма обмена слишком мала. Пожалуйста, введите большую сумму.")
             return
@@ -494,7 +489,7 @@ async def handle_amount_input(message: types.Message, state: FSMContext):
             tg_id=user_tg_id,
             currency_from=currency_from,
             currency_to=currency_to,
-            give=round(amount_to_give, 8 if currency_from == "USDT" else 2),  # Точность для отдаваемой валюты
+            give=round(amount_to_give, 8 if currency_from == "USDT" else 2),
             rate=fixed_rate_for_calculation_str,
             get=round(amount_to_get, 2),
         )
@@ -514,14 +509,20 @@ async def handle_amount_input(message: types.Message, state: FSMContext):
             final_commission_text=final_commission_text
         )
 
+        safe_receive_type = html.escape(receive_type)
+        safe_display_rate = html.escape(display_rate_text_for_deal)
+        safe_currency_from = html.escape(currency_from)
+        safe_commission_text = html.escape(final_commission_text)
+        safe_currency_to = html.escape(currency_to if currency_to else "THB")  # На случай если currency_to не "THB"
+
         text_to_confirm = (
-            f"💱 <b>Проверьте детали обмена</b>\n\n"
+            "💱 <b>Проверьте детали обмена</b>\n\n"
             f"💌 Заявка №{request_id}\n"
-            f"💨 {receive_type}\n"
-            f"💱 Курс: <b>{display_rate_text_for_deal}</b> (зафиксирован для этой сделки)\n"
-            f"💸 Вы отдаёте: <b>{amount_to_give:.2f} {currency_from}</b>{final_commission_text}\n"
-            f"💰 Получаете: <b>{amount_to_get:.2f} {currency_to}</b>\n\n"
-            f"❕<b>Подтвердите заявку:</b>"
+            f"💨 {safe_receive_type}\n"
+            f"💱 Курс: <b>{safe_display_rate}</b> (зафиксирован для этой сделки)\n"
+            f"💸 Вы отдаёте: <b>{amount_to_give:.2f} {safe_currency_from}</b>{safe_commission_text}\n"
+            f"💰 Получаете: <b>{amount_to_get:.2f} {safe_currency_to}</b>\n\n"
+            "❕<b>Подтвердите заявку:</b>"
         )
         await message.answer(
             text_to_confirm,
@@ -531,37 +532,23 @@ async def handle_amount_input(message: types.Message, state: FSMContext):
     except ValueError:
         await message.answer("Пожалуйста, введите корректную сумму.")
     except Exception as e:
-        logging.exception(f"Критическая ошибка в handle_amount_input:")  # Используем exception для полного трейсбека
+        logging.exception(f"Критическая ошибка в handle_amount_input:")
         await message.answer("Произошла непредвиденная ошибка при обработке суммы. Мы уже разбираемся.")
 
 
-# --- Остальные хендлеры (confirm_exchange_handler, handle_payment_screenshot и т.д.) остаются в основном такими же,
-# так как они уже работают с request_id из FSM, который теперь будет корректно установлен ---
-
-# ... (пропустил без изменений handle_payment_screenshot, manager_confirm, manager_reject, receipt_confirmation, support_contact, cancel_exchange, history, safe_edit, back_to_profile)
-# Важно: в cancel_exchange_handler логика остается прежней.
-
-# Код для `confirm_exchange_handler` (без изменений, т.к. он уже берет данные из FSM)
 @router.callback_query(F.data == "confirm_exchange")
 async def confirm_exchange_handler(callback_query: types.CallbackQuery, state: FSMContext):
     try:
         data = await state.get_data()
         request_id = data.get("request_id")
         currency_from = data.get("currency_from")
-        amount_to_give = data.get("final_amount_to_give")  # Используем сохраненные финальные суммы
+        amount_to_give = data.get("final_amount_to_give")
         amount_to_get = data.get("final_amount_to_get")
 
         if not all([request_id, currency_from, amount_to_give is not None, amount_to_get is not None]):
             await callback_query.answer("Ошибка: не удалось получить данные заявки. Пожалуйста, начните заново.",
                                         show_alert=True)
-            current_message_id = callback_query.message.message_id
-            try:
-                await safe_edit_text(callback_query.message, "Произошла ошибка. Пожалуйста, начните обмен заново.",
-                                     reply_markup=inline_keyboards.get_exchange_main_keyboard())
-            except Exception:  # Если не удалось отредактировать, отправляем новое
-                if callback_query.message.message_id == current_message_id:  # Чтобы не отправить, если уже отредактировано
-                    await callback_query.message.answer("Произошла ошибка. Пожалуйста, начните обмен заново.",
-                                                        reply_markup=inline_keyboards.get_exchange_main_keyboard())
+            # ... (код для ответа пользователю, если edit_text не сработал) ...
             await state.clear()
             return
 
@@ -574,7 +561,7 @@ async def confirm_exchange_handler(callback_query: types.CallbackQuery, state: F
                 f"💸 Сумма к оплате: <b>{amount_to_give:.2f} USDT</b>\n"
                 f"💰 Вы получите: <b>{amount_to_get:.2f} THB</b>\n\n"
                 "📝 <b>USDT (TRC20)</b>\n"
-                "Кошелек: <code>TMjRsz5SZ16adPMf11QQNZDHYkwQ58nSDd</code>\n"
+                "Кошелек: <code>ВАШ_USDT_КОШЕЛЕК_TRC20</code>\n"  # ЗАМЕНИТЬ
                 "Сеть: TRC20\n\n"
                 "⚠️ После оплаты, пожалуйста, отправьте скриншот подтверждения перевода в этот чат."
             )
@@ -584,9 +571,9 @@ async def confirm_exchange_handler(callback_query: types.CallbackQuery, state: F
                 f"💸 Сумма к оплате: <b>{amount_to_give:.2f} RUB</b>\n"
                 f"💰 Вы получите: <b>{amount_to_get:.2f} THB</b>\n\n"
                 "📝 <b>Рублевый перевод</b>\n"
-                "Номер: <code>+79263691059</code>\n"
-                "Банки: Сбербанк, Альфа, Тинькофф\n"
-                "Получатель: Виталий Водолазов\n\n"
+                "Номер: <code>ВАШ_НОМЕР_КАРТЫ_ИЛИ_ТЕЛЕФОНА</code>\n"  # ЗАМЕНИТЬ
+                "Банки: Сбербанк, Альфа, Тинькофф (или ваши банки)\n"
+                "Получатель: ИМЯ ФАМИЛИЯ ПОЛУЧАТЕЛЯ\n\n"  # ЗАМЕНИТЬ
                 "⚠️ После оплаты, пожалуйста, отправьте скриншот подтверждения перевода в этот чат."
             )
 
@@ -604,6 +591,288 @@ async def confirm_exchange_handler(callback_query: types.CallbackQuery, state: F
         await callback_query.answer("Произошла ошибка. Попробуйте снова.")
 
 
+@router.message(F.photo, StateFilter("waiting_for_payment_screenshot"))
+async def handle_payment_screenshot(message: types.Message, state: FSMContext):
+    try:
+        data = await state.get_data()
+        user_tg_id = message.from_user.id
+        username = message.from_user.username or f"id{user_tg_id}"
+
+        request_id = data.get("request_id")
+        receive_type = data.get("receive_type", "Не указан")
+        currency_from = data.get("currency_from")
+        currency_to = data.get("currency_to")
+        amount_to_give = data.get("final_amount_to_give")
+        amount_to_get = data.get("final_amount_to_get")
+        actual_rate_str = data.get("exchange_rate_str")  # Зафиксированный курс
+        final_commission_text = data.get("final_commission_text", "")
+
+        if not request_id:
+            logging.error(f"Критическая ошибка: request_id не найден в FSM для {user_tg_id} при отправке скриншота.")
+            await message.answer("Произошла внутренняя ошибка. Пожалуйста, свяжитесь с поддержкой.",
+                                 reply_markup=get_main_keyboard())
+            await state.clear()
+            return
+
+        await db.update_exchange_request_data(request_id=request_id, status=db.Status.processing)
+
+        safe_username = html.escape(username)
+        safe_currency_from = html.escape(currency_from)
+        safe_currency_to = html.escape(currency_to)
+        safe_receive_type = html.escape(receive_type)
+        safe_actual_rate_str = html.escape(actual_rate_str)
+        safe_commission_text = html.escape(final_commission_text)
+
+        text_for_manager = (
+            f"💌 Новая заявка #{request_id} ожидает обработки!\n\n"
+            f"💨 Пользователь: @{safe_username} (tg_id: {user_tg_id})\n"
+            f"💱 Направление: {safe_currency_from} → {safe_currency_to}\n"
+            f"🏦 Способ получения: {safe_receive_type}\n"
+            f"Курс: 1 {safe_currency_from} = {safe_actual_rate_str} {safe_currency_to}\n"
+            f"💸 Отдал: {amount_to_give:.2f} {safe_currency_from}{safe_commission_text}\n"
+            f"💰 К получению: {amount_to_get:.2f} {safe_currency_to}\n"
+        )
+
+        # Отправляем скриншот и текст менеджеру
+        # Сначала фото, потом текст с кнопками
+        await message.bot.send_photo(
+            chat_id=MANAGER_CHAT_ID,
+            photo=message.photo[-1].file_id,
+            # caption=text_for_manager, # Можно добавить caption к фото, но тогда кнопки будут под ним
+            # reply_markup=inline_keyboards.get_manager_action_keyboard(request_id)
+        )
+        await message.bot.send_message(
+            chat_id=MANAGER_CHAT_ID,
+            text=text_for_manager,
+            reply_markup=inline_keyboards.get_manager_action_keyboard(str(request_id))
+            # request_id должен быть строкой для f-строки в клавиатуре
+        )
+
+        await message.answer(
+            "✅ Ваш платеж получен и заявка отправлена на обработку менеджеру! Ожидайте дальнейших инструкций.\n\n"
+            "Если возникнут какие-либо вопросы, с вами свяжется менеджер.",
+            reply_markup=get_main_keyboard()
+        )
+        await state.clear()
+
+    except Exception as e:
+        logging.exception(f"Ошибка при обработке скриншота оплаты:")
+        await message.answer("Произошла ошибка при обработке вашего платежа. Пожалуйста, свяжитесь с поддержкой.",
+                             reply_markup=get_main_keyboard())
+        await state.clear()
+
+
+@router.callback_query(F.data.startswith("manager_confirm_"))
+async def handle_manager_confirm(callback_query: types.CallbackQuery):
+    try:
+        request_id_str = callback_query.data.split("_")[-1]
+        request_id = int(request_id_str)
+
+        exchange_request = await db.get_exchange_request_by_id(request_id)  # Эта функция должна загружать user
+        if not exchange_request or not hasattr(exchange_request, 'user') or not exchange_request.user:
+            await callback_query.answer(f"Заявка #{request_id} или данные пользователя не найдены.", show_alert=True)
+            await safe_edit_text(callback_query.message,
+                                 f"{callback_query.message.text}\n\n⚠️ Заявка #{request_id} или пользователь не найден!",
+                                 reply_markup=None)
+            return
+
+        user_id_to_notify = exchange_request.user.tg_id
+
+        await db.update_exchange_request_data(request_id=request_id, status=db.Status.pending_get)
+
+        edited_manager_text = f"{callback_query.message.text}\n\n✅ Заявка #{request_id} подтверждена. Ожидается подтверждение получения от пользователя."
+        await safe_edit_text(callback_query.message, edited_manager_text, reply_markup=None)
+
+        await callback_query.bot.send_message(
+            user_id_to_notify,
+            f"✅ Ваша заявка #{request_id} подтверждена менеджером! Средства готовы к выдаче."
+        )
+
+        message_text_for_manager = callback_query.message.text  # Текст исходного сообщения менеджеру
+        receive_type_from_text = "Не определен"  # Значение по умолчанию
+        # Ищем способ получения в тексте сообщения (этот способ не самый надежный, лучше хранить в БД)
+        if "Способ получения: Получение в отеле" in message_text_for_manager:
+            receive_type_from_text = "Получение в отеле"
+        elif "Способ получения: Получение в банкомате" in message_text_for_manager:
+            receive_type_from_text = "Получение в банкомате"
+
+        if receive_type_from_text == "Получение в отеле":
+            await callback_query.bot.send_message(
+                user_id_to_notify,
+                "🏨 <b>Инструкция по получению в отеле:</b>\n\n"
+                "1. Придите по адресу: <a href='https://maps.app.goo.gl/YUBKHTMEw29DJby18'>Отель \"Название Отеля\"</a>\n"  # ЗАМЕНИТЬ
+                "2. Покажите на рецепшене это сообщение или ваш ID заявки.\n"
+                "3. Получите ваши средства.",
+                parse_mode="HTML"
+            )
+        elif receive_type_from_text == "Получение в банкомате":
+            video_dir = "Video"
+            if os.path.exists(video_dir) and os.path.isdir(video_dir):
+                for video_file in sorted(os.listdir(video_dir)):  # sorted для порядка
+                    if video_file.lower().endswith(('.mp4', '.avi', '.mov')):
+                        video_path = os.path.join(video_dir, video_file)
+                        try:
+                            await callback_query.bot.send_video(user_id_to_notify, FSInputFile(video_path))
+                        except Exception as e_vid:
+                            logging.error(f"Ошибка отправки видео {video_path}: {e_vid}")
+            else:
+                logging.warning(f"Папка с видео '{video_dir}' не найдена.")
+
+            pictures_dir = "pictures"
+            for i in range(1, 3):
+                image_path = os.path.join(pictures_dir, f"{i}.jpg")
+                if os.path.exists(image_path):
+                    try:
+                        await callback_query.bot.send_photo(user_id_to_notify, FSInputFile(image_path))
+                    except Exception as e_img:
+                        logging.error(f"Ошибка отправки изображения {image_path}: {e_img}")
+                else:
+                    logging.warning(f"Изображение-инструкция {image_path} не найдено.")
+
+        await callback_query.bot.send_message(
+            user_id_to_notify,
+            f"Пожалуйста, подтвердите получение средств по заявке #{request_id}:",
+            reply_markup=inline_keyboards.get_receipt_confirmation_keyboard(request_id)
+        )
+        await callback_query.answer()
+
+    except Exception as e:
+        logging.exception(
+            f"Ошибка при подтверждении заявки менеджером (request_id: {callback_query.data.split('_')[-1]}):")
+        await callback_query.answer("Произошла ошибка при подтверждении. Попробуйте снова.")
+
+
+@router.callback_query(F.data.startswith("manager_reject_"))
+async def handle_manager_reject(callback_query: types.CallbackQuery):
+    try:
+        request_id_str = callback_query.data.split("_")[-1]
+        request_id = int(request_id_str)
+
+        exchange_request = await db.get_exchange_request_by_id(request_id)
+        if not exchange_request or not hasattr(exchange_request, 'user') or not exchange_request.user:
+            await callback_query.answer(f"Заявка #{request_id} или данные пользователя не найдены.", show_alert=True)
+            # ... (можно отредактировать сообщение менеджеру об ошибке)
+            return
+
+        user_tg_id_to_notify = exchange_request.user.tg_id
+        user_username_to_contact = html.escape(str(exchange_request.user.username or f"id{user_tg_id_to_notify}"))
+
+        await db.update_exchange_request_data(request_id=request_id, status=db.Status.cancelled)
+
+        edited_manager_text = f"{callback_query.message.text}\n\n❌ Заявка #{request_id} отклонена."
+        await safe_edit_text(callback_query.message, edited_manager_text, reply_markup=None)
+
+        await callback_query.bot.send_message(
+            user_tg_id_to_notify,
+            f"❌ Ваша заявка #{request_id} была отклонена менеджером. "
+            f"Пожалуйста, свяжитесь с поддержкой для уточнения деталей или ожидайте сообщения от менеджера."
+        )
+
+        await callback_query.bot.send_message(
+            MANAGER_CHAT_ID,
+            f"⚠️ Заявка #{request_id} отклонена. Пожалуйста, свяжитесь с пользователем @{user_username_to_contact} для уточнения деталей."
+        )
+        await callback_query.answer("Заявка отклонена.")
+
+    except Exception as e:
+        logging.exception(
+            f"Ошибка при отклонении заявки менеджером (request_id: {callback_query.data.split('_')[-1]}):")
+        await callback_query.answer("Произошла ошибка при отклонении. Попробуйте снова.")
+
+
+@router.callback_query(F.data.startswith("receipt_confirmed_"))
+async def handle_receipt_confirmation(callback_query: types.CallbackQuery):
+    try:
+        prefix = "receipt_confirmed_"
+        request_id_str = callback_query.data[len(prefix):]
+        request_id = int(request_id_str)
+
+        updated_request = await db.update_exchange_request_data(request_id=request_id, status=db.Status.successful)
+
+        if updated_request:
+            logging.info(
+                f"User {callback_query.from_user.id} confirmed receipt for request {request_id}. Status: {updated_request.status.value}")
+            await safe_edit_text(
+                callback_query.message,
+                f"✅ Спасибо за подтверждение получения для заявки #{request_id}! Обмен успешно завершен.",
+                reply_markup=None
+            )
+            await callback_query.bot.send_message(MANAGER_CHAT_ID,
+                                                  f"✅ Пользователь подтвердил получение по заявке #{request_id}. Обмен завершен.")
+        else:
+            logging.warning(
+                f"Не удалось найти или обновить заявку {request_id} при подтверждении получения пользователем {callback_query.from_user.id}.")
+            await callback_query.answer("Не удалось обновить статус заявки. Свяжитесь с поддержкой.", show_alert=True)
+
+        await callback_query.answer()
+    except ValueError:
+        logging.error(f"Не удалось извлечь ID из callback_data: {callback_query.data} в handle_receipt_confirmation")
+        await callback_query.answer("Ошибка в данных кнопки.", show_alert=True)
+    except Exception as e:
+        logging.exception(f"Ошибка при подтверждении получения пользователем (callback_data: {callback_query.data}):")
+        await callback_query.answer("Произошла ошибка. Попробуйте снова.")
+
+
+@router.callback_query(F.data.startswith("support_contact_"))
+async def handle_support_contact(callback_query: types.CallbackQuery):
+    try:
+        prefix = "support_contact_"
+        request_id_str = callback_query.data[len(prefix):]
+        request_id = int(request_id_str)
+
+        await safe_edit_text(
+            callback_query.message,
+            "👨‍💼 Свяжитесь с поддержкой: @ВАШ_САППОРТ_ЮЗЕРНЕЙМ\n\n"  # ЗАМЕНИТЬ
+            f"Пожалуйста, укажите номер вашей заявки: #{request_id}\n\n"
+            "Вы можете вернуться к подтверждению получения средств:",
+            reply_markup=inline_keyboards.get_receipt_confirmation_keyboard(request_id)
+        )
+        await callback_query.answer()
+    except ValueError:
+        logging.error(f"Не удалось извлечь ID из callback_data: {callback_query.data} в handle_support_contact")
+        await callback_query.answer("Ошибка в данных кнопки.", show_alert=True)
+    except Exception as e:
+        logging.exception(f"Ошибка при запросе поддержки (callback_data: {callback_query.data}):")
+        await callback_query.answer("Произошла ошибка. Попробуйте снова.")
+
+
+@router.callback_query(F.data == "cancel_exchange")
+async def cancel_exchange_handler(callback_query: types.CallbackQuery, state: FSMContext):
+    try:
+        data = await state.get_data()
+        request_id = data.get("request_id")
+
+        if request_id:
+            updated_request = await db.update_exchange_request_data(request_id=request_id, status=db.Status.cancelled)
+            if updated_request:
+                logging.info(
+                    f"User {callback_query.from_user.id} cancelled exchange request {request_id}. Status set to Cancelled.")
+            else:
+                logging.warning(
+                    f"User {callback_query.from_user.id} tried to cancel request {request_id}, but it was not found or update failed.")
+        else:
+            logging.info(
+                f"User {callback_query.from_user.id} cancelled exchange before request was created in DB (request_id is None).")
+
+        await state.clear()
+
+        try:
+            await safe_edit_text(
+                callback_query.message,
+                "❌ Обмен отменен.\n\n💨 Выберите валюту, которую вы желаете получить, чтобы начать новый обмен:",
+                reply_markup=inline_keyboards.get_exchange_main_keyboard()
+            )
+        except Exception:
+            await callback_query.message.answer(
+                "❌ Обмен отменен.\n\n💨 Выберите валюту, которую вы желаете получить, чтобы начать новый обмен:",
+                reply_markup=inline_keyboards.get_exchange_main_keyboard()
+            )
+        await callback_query.answer("Обмен отменен.")
+    except Exception as e:
+        logging.exception(f"Ошибка при отмене обмена пользователем:")
+        await callback_query.answer("Произошла ошибка при отмене. Попробуйте снова.")
+
+
 @router.callback_query(F.data == "history_exchanges")
 async def show_exchange_history_handler(callback_query: types.CallbackQuery):
     try:
@@ -611,28 +880,25 @@ async def show_exchange_history_handler(callback_query: types.CallbackQuery):
         user_role = await db.get_user_role(tg_id=user_tg_id)
 
         history_text_header = "📜 <b>История обменов:</b>\n\n"
-        history_text_body = ""  # Для элементов истории
+        history_text_body = ""
         exchanges_to_display = []
         reply_markup_history = None
 
         if user_role == db.Role.client:
-            user_history = await db.get_user_exchange_history(
-                tg_id=user_tg_id,
-                include_creation_status=True
-            )
-            exchanges_to_display = user_history[:10]
+            user_history = await db.get_user_exchange_history(tg_id=user_tg_id, include_creation_status=True)
+            exchanges_to_display = user_history[:10]  # Последние 10
             if not exchanges_to_display:
-                history_text_body = "📜 У вас пока нет истории обменов."
+                history_text_body = "У вас пока нет истории обменов."  # Без тегов, т.к. header уже с тегами
             reply_markup_history = inline_keyboards.get_profile_main_user_keyboard()
 
         elif user_role in [db.Role.admin, db.Role.manager]:
-            all_history = await db.get_last_20_all_users_exchange_history()
+            all_history = await db.get_last_20_all_users_exchange_history()  # Уже содержит user
             exchanges_to_display = all_history
             if not exchanges_to_display:
-                history_text_body = "📜 В системе пока нет обменов."
-            # reply_markup_history остается None для админа/менеджера (или можно задать свою)
+                history_text_body = "В системе пока нет обменов."
+            # reply_markup_history для админа можно оставить None или добавить свою админскую "назад"
 
-        else:
+        else:  # Неизвестная роль или None
             await callback_query.answer("Не удалось определить вашу роль для отображения истории.", show_alert=True)
             return
 
@@ -645,10 +911,9 @@ async def show_exchange_history_handler(callback_query: types.CallbackQuery):
 
                 safe_currency_from = html.escape(str(item.currency_from))
                 safe_currency_to = html.escape(str(item.currency_to))
-                # Преобразуем item.rate в строку перед экранированием и проверкой
                 rate_value_str = str(item.rate)
                 safe_rate_display_str = html.escape(rate_value_str)
-                safe_status_value = html.escape(str(item.status.value))  # item.status это Enum, .value это строка
+                safe_status_value = html.escape(str(item.status.value))
 
                 rate_line = f"Курс: 1 {safe_currency_from} = {safe_rate_display_str} {safe_currency_to}" \
                     if item.rate and rate_value_str.lower() != "n/a" else "Курс: на момент сделки"
@@ -657,37 +922,59 @@ async def show_exchange_history_handler(callback_query: types.CallbackQuery):
                     f"<b>Заявка #{item.id}</b>\n"
                     f"{user_info_for_admin}"
                     f"🗓 Дата: {item.date.strftime('%Y-%m-%d %H:%M')}\n"
-                    f" направление: {safe_currency_from} → {safe_currency_to}\n"
+                    f"Направление: {safe_currency_from} → {safe_currency_to}\n"
                     f"💸 Отдал: {item.give:.2f} {safe_currency_from}\n"
                     f"💰 Получил: {item.get:.2f} {safe_currency_to}\n"
                     f"{rate_line}\n"
-                    f" Статус: {safe_status_value}\n\n"
+                    f"Статус: {safe_status_value}\n\n"
                 )
 
-        final_history_text = history_text_header + history_text_body if history_text_body else history_text_header + "Нет данных для отображения."
-        if not exchanges_to_display and user_role == db.Role.client:  # Если для клиента нет истории
-            final_history_text = "📜 У вас пока нет истории обменов."
-        elif not exchanges_to_display and user_role in [db.Role.admin, db.Role.manager]:  # Если для админа нет истории
-            final_history_text = "📜 В системе пока нет обменов."
+        # Собираем итоговый текст
+        final_history_text = history_text_header
+        if history_text_body:  # Если есть тело истории (записи или сообщение "нет истории")
+            final_history_text += history_text_body
+        elif not exchanges_to_display:  # Если тело пустое и не было записей (на всякий случай, хотя должно быть заполнено выше)
+            final_history_text += "Нет данных для отображения."
 
         await safe_edit_text(
             callback_query.message,
-            final_history_text.strip(),  # Убираем лишние пробелы в конце, если есть
+            final_history_text.strip(),
             reply_markup=reply_markup_history,
             parse_mode="HTML"
         )
         await callback_query.answer()
 
     except Exception as e:
-        logging.exception(f"Ошибка при показе истории обменов:")  # logging.exception для полного трейсбека
+        logging.exception(f"Ошибка при показе истории обменов:")
         await callback_query.answer("Произошла ошибка при загрузке истории. Попробуйте снова.")
 
-async def safe_edit_text(message, *args, **kwargs):
+
+async def safe_edit_text(message: types.Message, text: str, **kwargs):
     try:
-        await message.edit_text(*args, **kwargs)
+        await message.edit_text(text, **kwargs)
     except Exception as e:
-        if "message is not modified" in str(e):
-            pass  # Игнорируем эту ошибку
+        if "message is not modified" in str(e).lower():
+            pass
         else:
-            logging.error(f"Ошибка при edit_text: {str(e)}")
-            # Можно отправить ответ пользователю, если нужно
+            logging.error(
+                f"Ошибка при edit_text: {str(e)}. Сообщение: ID={message.message_id}, ChatID={message.chat.id}, Text: {text[:100]}")
+
+
+@router.callback_query(F.data == "back_to_profile")
+async def back_to_profile_handler(callback_query: types.CallbackQuery):
+    try:
+        tg_id = callback_query.from_user.id
+        user_history = await db.get_user_exchange_history(tg_id=tg_id, include_creation_status=False)
+        successful_exchanges_count = sum(1 for item in user_history if item.status == db.Status.successful)
+
+        await safe_edit_text(
+            callback_query.message,
+            f"💢Ваш профиль💢\n\n"
+            f"💫Ваш id: {tg_id}\n"
+            f"💫Количество успешных обменов: {successful_exchanges_count} 🎈🎈\n",
+            reply_markup=inline_keyboards.get_profile_main_user_keyboard()
+        )
+        await callback_query.answer()
+    except Exception as e:
+        logging.error(f"Ошибка в back_to_profile_handler: {str(e)}")
+        await callback_query.answer("Произошла ошибка.")
