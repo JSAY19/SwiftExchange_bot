@@ -31,4 +31,4 @@ handler.setFormatter(AlternatingColorFormatter(
         'CRITICAL': 'bold_red',
     }
 ))
-logging.basicConfig(level=logging.INFO, handlers=[handler]) 
+logging.basicConfig(level=logging.DEBUG, handlers=[handler])

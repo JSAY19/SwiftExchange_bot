@@ -6,24 +6,26 @@ from src.models.base_client import BaseClient
 
 class CoinGeckoClient(BaseClient):
     def __init__(self, session: aiohttp.ClientSession):
-        self.api_url = 'https://api.coingecko.com/api/v3/simple/price'
+        self.api_url = "https://open.er-api.com/v6/latest/"
 
         super().__init__(session=session)
 
     async def get_rate(self):
-        data_usdt_thb = await self.make_request(method='GET', endpoint=f'{self.api_url}?ids=tether&vs_currencies=thb')
-        usdt_thb = float(data_usdt_thb['tether']['thb'])
-        data_usdt_rub = await self.make_request(method='GET', endpoint=f'{self.api_url}?ids=tether&vs_currencies=rub')
-        usdt_rub = float(data_usdt_rub['tether']['rub'])
-        if usdt_thb and usdt_rub:
-            rub_thb = usdt_thb / usdt_rub
-            rates = {
-                'USDT/THB': usdt_thb,
-                'RUB/THB': rub_thb,
-            }
-            return rates
-        else:
-            return None
+        data_usdt_thb = await self.make_request(method='GET', endpoint=f"{self.api_url}USDT")
+        data_rub_thb = await self.make_request(method='GET', endpoint=f"{self.api_url}RUB")
+
+        if data_rub_thb.get("result") == "success" and data_usdt_thb.get("result") == "success":
+            rub_thb = float(data_rub_thb["rates"]["THB"])
+            usdt_thb = float(data_usdt_thb["rates"]["THB"])
+
+            if rub_thb != 0 and usdt_thb != 0:
+                rates = {
+                    'USDT/THB': usdt_thb,
+                    'RUB/THB': rub_thb,
+                }
+                return rates
+            else:
+                return None
 
 
 async def main():

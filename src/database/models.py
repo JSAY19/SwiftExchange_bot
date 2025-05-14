@@ -28,7 +28,7 @@ class Status(enum.Enum):
     pending_payment = "Ожидание оплаты"
     processing = "Обработка"
     successful = "Успешно"
-    canceled = "Отменен"
+    cancelled = "Отменен"
     pending_get = "Ожидание получения"
 
 

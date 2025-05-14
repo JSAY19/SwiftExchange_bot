@@ -95,9 +95,9 @@ def get_manager_action_keyboard(request_id: str):
     keyboard.button(text="❌ Отклонить", callback_data=f"manager_reject_{request_id}")
     return keyboard.as_markup()
 
-def get_receipt_confirmation_keyboard():
+def get_receipt_confirmation_keyboard(request_id):
     keyboard = InlineKeyboardBuilder()
-    keyboard.button(text="✅ Получил", callback_data="receipt_confirmed")
-    keyboard.button(text="❓ Связаться с поддержкой", callback_data="support_contact")
+    keyboard.button(text="✅ Получил", callback_data=f"receipt_confirmed_{request_id}")
+    keyboard.button(text="❓ Связаться с поддержкой", callback_data=f"support_contact_{request_id}")
     return keyboard.as_markup()
 
