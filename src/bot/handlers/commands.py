@@ -25,6 +25,11 @@ import logging
 aiohttp_session_global: aiohttp.ClientSession | None = None
 coingecko_client_global: CoinGeckoClient | None = None
 
+EXCHANGER_FEE_PERCENTAGE = 0.03 # 3%
+
+MIN_COMMISSION_THB = 300.0
+MIN_THB_FOR_NO_COMMISSION = 10000.0
+
 # --- ID Менеджера (лучше вынести в конфиг) ---
 MANAGER_CHAT_ID = 6659909595  # Пример
 
@@ -47,7 +52,7 @@ async def update_and_store_rates_in_fsm(state: FSMContext, client: CoinGeckoClie
     try:
         rates = await current_client.get_rate()
         if rates and isinstance(rates, dict) and 'USDT/THB' in rates and 'RUB/THB' in rates:
-            usdt_thb_rate = rates.get('USDT/THB')
+            usdt_thb_rate = rates.get('USDT/THB') * (1 - 0.1)
             rub_thb_rate = rates.get('RUB/THB')
 
             await state.update_data(
@@ -203,9 +208,9 @@ async def usdt_to_thb_handler(callback_query: types.CallbackQuery, state: FSMCon
 
         await safe_edit_text(
             callback_query.message,
-            f"<b>💱 Выбор обмена (USDT → THB)</b>\n"
+            "<b>💱 Выбор обмена (USDT → THB)</b>\n"
             f"Текущий курс для информации: <b>1 USDT ≈ {current_usdt_thb:.2f} THB</b>\n"
-            f"(курс для обмена будет зафиксирован на этом шаге)\n\n"
+            "(курс для обмена будет зафиксирован на этом шаге)\n\n"
             "<b>⚙ Варианты обмена:</b>\n"
             "🌐 <b>В банкомате</b> (Мин: 10000 THB, иначе ком. 300 THB)\n"
             "🏢 <b>В отеле</b> (Мин: 10000 THB, иначе ком. 300 THB)",
@@ -243,9 +248,9 @@ async def rub_to_thb_handler(callback_query: types.CallbackQuery, state: FSMCont
 
         await safe_edit_text(
             callback_query.message,
-            f"<b>🎈Выбор обмена (RUB → THB)🎈</b>\n"
+            "<b>🎈Выбор обмена (RUB → THB)🎈</b>\n"
             f"Текущий курс для информации: <b>1 RUB ≈ {current_rub_thb:.4f} THB</b>\n"
-            f"(курс для обмена будет зафиксирован на этом шаге)\n\n"
+            "(курс для обмена будет зафиксирован на этом шаге)\n\n"
             "<b>⚙ Варианты обмена:</b>\n"
             "🌐 <b>В банкомате</b> (Мин: 10000 THB, иначе ком. 300 THB)\n"
             "🏢 <b>В отеле</b> (Мин: 10000 THB, иначе ком. 300 THB)",
@@ -391,7 +396,7 @@ async def switch_input_currency_handler(callback_query: types.CallbackQuery, sta
             text_parts.append(safe_network_text)
         text_parts.extend([
             "💰 Мин. сумма для обмена без доп. комиссии: 10000 THB",
-            "(Если сумма к получению < 10000 THB, будет добавлена комиссия 300 THB к сумме, которую вы отдаете)",
+            "(Если сумма к получению &lt; 10000 THB, будет добавлена комиссия 300 THB к сумме, которую вы отдаете)",
             f"<b>❕ Введите сумму {safe_prompt_currency}:</b>"
         ])
         text = "\n\n".join(text_parts)
@@ -408,6 +413,133 @@ async def switch_input_currency_handler(callback_query: types.CallbackQuery, sta
         await callback_query.answer("Произошла ошибка. Попробуйте снова.")
 
 
+# @router.message(StateFilter(None), F.text.regexp(r'^\d+([\.,]\d+)?$'))
+# async def handle_amount_input(message: types.Message, state: FSMContext):
+#     try:
+#         data = await state.get_data()
+#         currency_from = data.get("currency_from")
+#         if not currency_from:
+#             logging.info(f"Получена сумма '{message.text}' от {get_user_display(message.from_user)} вне контекста FSM.")
+#             return
+#
+#         fixed_rate_for_calculation_str = data.get("exchange_rate_str")
+#         if not fixed_rate_for_calculation_str:
+#             logging.error(
+#                 f"Критическая ошибка: exchange_rate_str не найден в FSM для {message.from_user.id} на этапе ввода суммы.")
+#             await message.answer("Произошла ошибка: курс для расчета не определен. Пожалуйста, начните обмен заново.",
+#                                  reply_markup=get_main_keyboard())
+#             await state.clear()
+#             return
+#
+#         current_rate_for_calc = float(fixed_rate_for_calculation_str)
+#
+#         amount_str = message.text.replace(',', '.')
+#         amount_entered = float(amount_str)
+#         user_tg_id = message.from_user.id
+#
+#         receive_type = data.get("receive_type", "Не указан")
+#         currency_to = data.get("currency_to")
+#         input_type = data.get("input_type")
+#
+#         amount_to_give = 0.0
+#         amount_to_get = 0.0
+#         final_commission_text = ""
+#         MIN_THB_FOR_NO_COMMISSION = 10000.0
+#         COMMISSION_THB_AMOUNT = 300.0
+#         display_rate_text_for_deal = ""
+#
+#         if currency_from == "USDT":
+#             display_rate_text_for_deal = f"1 USDT = {current_rate_for_calc:.2f} THB"
+#             if input_type == "input_thb":
+#                 amount_to_get = amount_entered
+#                 amount_to_give = amount_to_get / current_rate_for_calc
+#                 if amount_to_get < MIN_THB_FOR_NO_COMMISSION and amount_to_get > 0:
+#                     commission_in_usdt = COMMISSION_THB_AMOUNT / current_rate_for_calc
+#                     amount_to_give += commission_in_usdt
+#                     final_commission_text = f"\n(включая комиссию {COMMISSION_THB_AMOUNT:.0f} THB ≈ {commission_in_usdt:.2f} USDT)"
+#             else:
+#                 amount_to_give_initial = amount_entered
+#                 amount_to_get_calculated = amount_to_give_initial * current_rate_for_calc
+#                 amount_to_give = amount_to_give_initial
+#                 amount_to_get = amount_to_get_calculated
+#                 if amount_to_get_calculated < MIN_THB_FOR_NO_COMMISSION and amount_to_get_calculated > 0:
+#                     commission_in_usdt = COMMISSION_THB_AMOUNT / current_rate_for_calc
+#                     amount_to_give += commission_in_usdt
+#                     final_commission_text = f"\n(включая комиссию {COMMISSION_THB_AMOUNT:.0f} THB ≈ {commission_in_usdt:.2f} USDT)"
+#
+#         elif currency_from == "RUB":
+#             display_rate_text_for_deal = f"1 RUB = {current_rate_for_calc:.4f} THB"
+#             if input_type == "input_thb":
+#                 amount_to_get = amount_entered
+#                 amount_to_give = amount_to_get / current_rate_for_calc
+#                 if amount_to_get < MIN_THB_FOR_NO_COMMISSION and amount_to_get > 0:
+#                     commission_in_rub = COMMISSION_THB_AMOUNT / current_rate_for_calc
+#                     amount_to_give += commission_in_rub
+#                     final_commission_text = f"\n(включая комиссию {COMMISSION_THB_AMOUNT:.0f} THB ≈ {commission_in_rub:.2f} RUB)"
+#             else:
+#                 amount_to_give_initial = amount_entered
+#                 amount_to_get_calculated = amount_to_give_initial * current_rate_for_calc
+#                 amount_to_give = amount_to_give_initial
+#                 amount_to_get = amount_to_get_calculated
+#                 if amount_to_get_calculated < MIN_THB_FOR_NO_COMMISSION and amount_to_get_calculated > 0:
+#                     commission_in_rub = COMMISSION_THB_AMOUNT / current_rate_for_calc
+#                     amount_to_give += commission_in_rub
+#                     final_commission_text = f"\n(включая комиссию {COMMISSION_THB_AMOUNT:.0f} THB ≈ {commission_in_rub:.2f} RUB)"
+#
+#         if amount_to_get <= 0 or amount_to_give <= 0:
+#             await message.answer("Сумма обмена слишком мала. Пожалуйста, введите большую сумму.")
+#             return
+#
+#         new_request_in_db = await db.create_exchange_request(
+#             tg_id=user_tg_id,
+#             currency_from=currency_from,
+#             currency_to=currency_to,
+#             give=round(amount_to_give, 8 if currency_from == "USDT" else 2),
+#             rate=fixed_rate_for_calculation_str,
+#             get=round(amount_to_get, 2),
+#         )
+#
+#         if not new_request_in_db:
+#             await message.answer("Произошла ошибка при создании заявки. Попробуйте позже.",
+#                                  reply_markup=get_main_keyboard())
+#             await state.clear()
+#             return
+#
+#         request_id = new_request_in_db.id
+#
+#         await state.update_data(
+#             request_id=request_id,
+#             final_amount_to_give=amount_to_give,
+#             final_amount_to_get=amount_to_get,
+#             final_commission_text=final_commission_text
+#         )
+#
+#         safe_receive_type = html.escape(receive_type)
+#         safe_display_rate = html.escape(display_rate_text_for_deal)
+#         safe_currency_from = html.escape(currency_from)
+#         safe_commission_text = html.escape(final_commission_text)
+#         safe_currency_to = html.escape(currency_to if currency_to else "THB")  # На случай если currency_to не "THB"
+#
+#         text_to_confirm = (
+#             "💱 <b>Проверьте детали обмена</b>\n\n"
+#             f"💌 Заявка №{request_id}\n"
+#             f"💨 {safe_receive_type}\n"
+#             f"💱 Курс: <b>{safe_display_rate}</b> (зафиксирован для этой сделки)\n"
+#             f"💸 Вы отдаёте: <b>{amount_to_give:.2f} {safe_currency_from}</b>{safe_commission_text}\n"
+#             f"💰 Получаете: <b>{amount_to_get:.2f} {safe_currency_to}</b>\n\n"
+#             "❕<b>Подтвердите заявку:</b>"
+#         )
+#         await message.answer(
+#             text_to_confirm,
+#             reply_markup=inline_keyboards.get_confirm_exchange_keyboard(),
+#             parse_mode="HTML"
+#         )
+#     except ValueError:
+#         await message.answer("Пожалуйста, введите корректную сумму.")
+#     except Exception as e:
+#         logging.exception(f"Критическая ошибка в handle_amount_input:")
+#         await message.answer("Произошла непредвиденная ошибка при обработке суммы. Мы уже разбираемся.")
+
 @router.message(StateFilter(None), F.text.regexp(r'^\d+([\.,]\d+)?$'))
 async def handle_amount_input(message: types.Message, state: FSMContext):
     try:
@@ -417,8 +549,9 @@ async def handle_amount_input(message: types.Message, state: FSMContext):
             logging.info(f"Получена сумма '{message.text}' от {get_user_display(message.from_user)} вне контекста FSM.")
             return
 
-        fixed_rate_for_calculation_str = data.get("exchange_rate_str")
-        if not fixed_rate_for_calculation_str:
+        # Используем зафиксированный (и уже скорректированный на RATE_ADJUSTMENT_PERCENTAGE) курс из FSM
+        fixed_adjusted_rate_str = data.get("exchange_rate_str")
+        if not fixed_adjusted_rate_str:
             logging.error(
                 f"Критическая ошибка: exchange_rate_str не найден в FSM для {message.from_user.id} на этапе ввода суммы.")
             await message.answer("Произошла ошибка: курс для расчета не определен. Пожалуйста, начните обмен заново.",
@@ -426,72 +559,110 @@ async def handle_amount_input(message: types.Message, state: FSMContext):
             await state.clear()
             return
 
-        current_rate_for_calc = float(fixed_rate_for_calculation_str)
+        # Это ваш курс обмена (уже с учетом 10% "дельты")
+        exchange_rate_for_calc = float(fixed_adjusted_rate_str)
 
         amount_str = message.text.replace(',', '.')
-        amount_entered = float(amount_str)
+        amount_entered_by_user = float(amount_str)  # Сумма, которую ввел пользователь
         user_tg_id = message.from_user.id
 
         receive_type = data.get("receive_type", "Не указан")
-        currency_to = data.get("currency_to")
-        input_type = data.get("input_type")
+        currency_to = data.get("currency_to")  # Должен быть "THB"
+        input_type = data.get("input_type")  # Какую валюту вводил пользователь
 
-        amount_to_give = 0.0
-        amount_to_get = 0.0
-        final_commission_text = ""
-        MIN_THB_FOR_NO_COMMISSION = 10000.0
-        COMMISSION_THB_AMOUNT = 300.0
-        display_rate_text_for_deal = ""
+        # Переменные для финальных сумм
+        final_amount_to_give_by_user = 0.0  # Сколько пользователь в итоге отдаст (включая возможную мин. комиссию)
+        final_amount_to_get_by_user = 0.0  # Сколько пользователь в итоге получит (уже с вычетом всех комиссий)
+
+        min_commission_text = ""  # Текст про минимальную комиссию (300 THB)
+        exchanger_fee_thb = 0.0  # Сумма комиссии обменника в THB
+        exchanger_fee_text = ""  # Текст про комиссию обменника
+
+        # --- Шаг 1: Расчет предварительных сумм без комиссии обменника, но с учетом минимальной комиссии ---
+        preliminary_amount_to_give = 0.0
+        preliminary_amount_to_get_thb = 0.0  # Сумма в THB до вычета комиссии обменника
 
         if currency_from == "USDT":
-            display_rate_text_for_deal = f"1 USDT = {current_rate_for_calc:.2f} THB"
-            if input_type == "input_thb":
-                amount_to_get = amount_entered
-                amount_to_give = amount_to_get / current_rate_for_calc
-                if amount_to_get < MIN_THB_FOR_NO_COMMISSION and amount_to_get > 0:
-                    commission_in_usdt = COMMISSION_THB_AMOUNT / current_rate_for_calc
-                    amount_to_give += commission_in_usdt
-                    final_commission_text = f"\n(включая комиссию {COMMISSION_THB_AMOUNT:.0f} THB ≈ {commission_in_usdt:.2f} USDT)"
-            else:
-                amount_to_give_initial = amount_entered
-                amount_to_get_calculated = amount_to_give_initial * current_rate_for_calc
-                amount_to_give = amount_to_give_initial
-                amount_to_get = amount_to_get_calculated
-                if amount_to_get_calculated < MIN_THB_FOR_NO_COMMISSION and amount_to_get_calculated > 0:
-                    commission_in_usdt = COMMISSION_THB_AMOUNT / current_rate_for_calc
-                    amount_to_give += commission_in_usdt
-                    final_commission_text = f"\n(включая комиссию {COMMISSION_THB_AMOUNT:.0f} THB ≈ {commission_in_usdt:.2f} USDT)"
+            if input_type == "input_thb":  # Пользователь ввел, сколько THB хочет получить
+                preliminary_amount_to_get_thb = amount_entered_by_user
+                preliminary_amount_to_give = preliminary_amount_to_get_thb / exchange_rate_for_calc
+                if preliminary_amount_to_get_thb < MIN_THB_FOR_NO_COMMISSION and preliminary_amount_to_get_thb > 0:
+                    commission_equivalent_give = MIN_COMMISSION_THB / exchange_rate_for_calc
+                    preliminary_amount_to_give += commission_equivalent_give
+                    min_commission_text = f"\n(включая доп. сбор {MIN_COMMISSION_THB:.0f} THB ≈ {commission_equivalent_give:.2f} {currency_from} за малую сумму)"
+            else:  # input_usdt. Пользователь ввел, сколько USDT хочет отдать
+                preliminary_amount_to_give_initial = amount_entered_by_user
+                preliminary_amount_to_get_thb_calculated = preliminary_amount_to_give_initial * exchange_rate_for_calc
+
+                preliminary_amount_to_give = preliminary_amount_to_give_initial
+                preliminary_amount_to_get_thb = preliminary_amount_to_get_thb_calculated
+
+                if preliminary_amount_to_get_thb_calculated < MIN_THB_FOR_NO_COMMISSION and preliminary_amount_to_get_thb_calculated > 0:
+                    commission_equivalent_give = MIN_COMMISSION_THB / exchange_rate_for_calc
+                    preliminary_amount_to_give += commission_equivalent_give
+                    min_commission_text = f"\n(включая доп. сбор {MIN_COMMISSION_THB:.0f} THB ≈ {commission_equivalent_give:.2f} {currency_from} за малую сумму)"
+                    # Сумма к получению (preliminary_amount_to_get_thb) не меняется от этой мин. комиссии,
+                    # т.к. мы увеличили сумму к отдаче.
 
         elif currency_from == "RUB":
-            display_rate_text_for_deal = f"1 RUB = {current_rate_for_calc:.4f} THB"
             if input_type == "input_thb":
-                amount_to_get = amount_entered
-                amount_to_give = amount_to_get / current_rate_for_calc
-                if amount_to_get < MIN_THB_FOR_NO_COMMISSION and amount_to_get > 0:
-                    commission_in_rub = COMMISSION_THB_AMOUNT / current_rate_for_calc
-                    amount_to_give += commission_in_rub
-                    final_commission_text = f"\n(включая комиссию {COMMISSION_THB_AMOUNT:.0f} THB ≈ {commission_in_rub:.2f} RUB)"
-            else:
-                amount_to_give_initial = amount_entered
-                amount_to_get_calculated = amount_to_give_initial * current_rate_for_calc
-                amount_to_give = amount_to_give_initial
-                amount_to_get = amount_to_get_calculated
-                if amount_to_get_calculated < MIN_THB_FOR_NO_COMMISSION and amount_to_get_calculated > 0:
-                    commission_in_rub = COMMISSION_THB_AMOUNT / current_rate_for_calc
-                    amount_to_give += commission_in_rub
-                    final_commission_text = f"\n(включая комиссию {COMMISSION_THB_AMOUNT:.0f} THB ≈ {commission_in_rub:.2f} RUB)"
+                preliminary_amount_to_get_thb = amount_entered_by_user
+                preliminary_amount_to_give = preliminary_amount_to_get_thb / exchange_rate_for_calc
+                if preliminary_amount_to_get_thb < MIN_THB_FOR_NO_COMMISSION and preliminary_amount_to_get_thb > 0:
+                    commission_equivalent_give = MIN_COMMISSION_THB / exchange_rate_for_calc
+                    preliminary_amount_to_give += commission_equivalent_give
+                    min_commission_text = f"\n(включая доп. сбор {MIN_COMMISSION_THB:.0f} THB ≈ {commission_equivalent_give:.2f} {currency_from} за малую сумму)"
+            else:  # input_rub
+                preliminary_amount_to_give_initial = amount_entered_by_user
+                preliminary_amount_to_get_thb_calculated = preliminary_amount_to_give_initial * exchange_rate_for_calc
 
-        if amount_to_get <= 0 or amount_to_give <= 0:
+                preliminary_amount_to_give = preliminary_amount_to_give_initial
+                preliminary_amount_to_get_thb = preliminary_amount_to_get_thb_calculated
+
+                if preliminary_amount_to_get_thb_calculated < MIN_THB_FOR_NO_COMMISSION and preliminary_amount_to_get_thb_calculated > 0:
+                    commission_equivalent_give = MIN_COMMISSION_THB / exchange_rate_for_calc
+                    preliminary_amount_to_give += commission_equivalent_give
+                    min_commission_text = f"\n(включая доп. сбор {MIN_COMMISSION_THB:.0f} THB ≈ {commission_equivalent_give:.2f} {currency_from} за малую сумму)"
+
+        if preliminary_amount_to_get_thb <= 0 or preliminary_amount_to_give <= 0:
             await message.answer("Сумма обмена слишком мала. Пожалуйста, введите большую сумму.")
             return
+
+        # --- Шаг 2: Применение комиссии обменника (EXCHANGER_FEE_PERCENTAGE) ---
+        # Комиссия берется от суммы THB, которую пользователь получил бы без этой комиссии
+        exchanger_fee_thb = preliminary_amount_to_get_thb * EXCHANGER_FEE_PERCENTAGE
+        final_amount_to_get_by_user = preliminary_amount_to_get_thb - exchanger_fee_thb
+
+        # Текст про комиссию обменника (если она есть)
+        #if exchanger_fee_thb > 0.005:  # Показываем, если комиссия хотя бы полкопейки бата
+         #   exchanger_fee_text = f"\nКомиссия обменника: {exchanger_fee_thb:.2f} THB ({EXCHANGER_FEE_PERCENTAGE * 100:.1f}%)"
+
+        final_amount_to_give_by_user = preliminary_amount_to_give  # Сумма к отдаче не меняется от комиссии обменника (по Варианту 1)
+
+        # Итоговый текст с деталями комиссий
+        all_commission_details_text = min_commission_text  # Сначала текст про мин. комиссию (если была)
+        # if min_commission_text and exchanger_fee_text: # Если обе комиссии
+        #     all_commission_details_text += " и " + exchanger_fee_text.lstrip('\n') # Убираем лишний перенос строки
+        # elif exchanger_fee_text: # Если только комиссия обменника
+        #     all_commission_details_text = exchanger_fee_text
+        # Более простой вариант: просто конкатенируем, если они есть
+        if exchanger_fee_text:
+            all_commission_details_text += exchanger_fee_text
+
+        # --- Шаг 3: Формирование текста для отображения и запись в БД ---
+        display_rate_text_for_deal = ""
+        if currency_from == "USDT":
+            display_rate_text_for_deal = f"1 USDT = {exchange_rate_for_calc:.2f} THB"
+        elif currency_from == "RUB":
+            display_rate_text_for_deal = f"1 RUB = {exchange_rate_for_calc:.4f} THB"
 
         new_request_in_db = await db.create_exchange_request(
             tg_id=user_tg_id,
             currency_from=currency_from,
-            currency_to=currency_to,
-            give=round(amount_to_give, 8 if currency_from == "USDT" else 2),
-            rate=fixed_rate_for_calculation_str,
-            get=round(amount_to_get, 2),
+            currency_to=currency_to,  # THB
+            give=round(final_amount_to_give_by_user, 8 if currency_from == "USDT" else 2),
+            rate=fixed_adjusted_rate_str,  # Это ваш "скорректированный на 10%" курс
+            get=round(final_amount_to_get_by_user, 2),  # Это итоговая сумма с учетом всех комиссий
         )
 
         if not new_request_in_db:
@@ -502,26 +673,28 @@ async def handle_amount_input(message: types.Message, state: FSMContext):
 
         request_id = new_request_in_db.id
 
+        # Сохраняем в FSM финальные суммы для использования на следующих шагах
         await state.update_data(
             request_id=request_id,
-            final_amount_to_give=amount_to_give,
-            final_amount_to_get=amount_to_get,
-            final_commission_text=final_commission_text
+            final_amount_to_give=final_amount_to_give_by_user,  # Это то, что пользователь отдаст
+            final_amount_to_get=final_amount_to_get_by_user,  # Это то, что пользователь получит
+            final_commission_text=all_commission_details_text  # Общий текст про все комиссии
+            # exchange_rate_str (ваш скорректированный курс) уже в FSM
         )
 
         safe_receive_type = html.escape(receive_type)
-        safe_display_rate = html.escape(display_rate_text_for_deal)
+        safe_display_rate = html.escape(display_rate_text_for_deal)  # Это ваш скорректированный курс
         safe_currency_from = html.escape(currency_from)
-        safe_commission_text = html.escape(final_commission_text)
-        safe_currency_to = html.escape(currency_to if currency_to else "THB")  # На случай если currency_to не "THB"
+        safe_commission_details_text = html.escape(all_commission_details_text)
+        safe_currency_to = html.escape(str(currency_to))
 
         text_to_confirm = (
             "💱 <b>Проверьте детали обмена</b>\n\n"
             f"💌 Заявка №{request_id}\n"
             f"💨 {safe_receive_type}\n"
-            f"💱 Курс: <b>{safe_display_rate}</b> (зафиксирован для этой сделки)\n"
-            f"💸 Вы отдаёте: <b>{amount_to_give:.2f} {safe_currency_from}</b>{safe_commission_text}\n"
-            f"💰 Получаете: <b>{amount_to_get:.2f} {safe_currency_to}</b>\n\n"
+            f"💱 Наш курс (до комиссии обменника): <b>{safe_display_rate}</b>\n"
+            f"💸 Вы отдаёте: <b>{final_amount_to_give_by_user:.2f} {safe_currency_from}</b>{safe_commission_details_text}\n"
+            f"💰 Вы получите (после всех комиссий): <b>{final_amount_to_get_by_user:.2f} {safe_currency_to}</b>\n\n"
             "❕<b>Подтвердите заявку:</b>"
         )
         await message.answer(
@@ -532,9 +705,8 @@ async def handle_amount_input(message: types.Message, state: FSMContext):
     except ValueError:
         await message.answer("Пожалуйста, введите корректную сумму.")
     except Exception as e:
-        logging.exception(f"Критическая ошибка в handle_amount_input:")
+        logging.exception("Критическая ошибка в handle_amount_input:")
         await message.answer("Произошла непредвиденная ошибка при обработке суммы. Мы уже разбираемся.")
-
 
 @router.callback_query(F.data == "confirm_exchange")
 async def confirm_exchange_handler(callback_query: types.CallbackQuery, state: FSMContext):
@@ -587,7 +759,7 @@ async def confirm_exchange_handler(callback_query: types.CallbackQuery, state: F
         await callback_query.answer()
 
     except Exception as e:
-        logging.error(f"Ошибка в confirm_exchange_handler: {str(e)}")
+        logging.error("Ошибка в confirm_exchange_handler: {str(e)}")
         await callback_query.answer("Произошла ошибка. Попробуйте снова.")
 
 
@@ -656,7 +828,7 @@ async def handle_payment_screenshot(message: types.Message, state: FSMContext):
         await state.clear()
 
     except Exception as e:
-        logging.exception(f"Ошибка при обработке скриншота оплаты:")
+        logging.exception("Ошибка при обработке скриншота оплаты:")
         await message.answer("Произошла ошибка при обработке вашего платежа. Пожалуйста, свяжитесь с поддержкой.",
                              reply_markup=get_main_keyboard())
         await state.clear()
@@ -765,7 +937,7 @@ async def handle_manager_reject(callback_query: types.CallbackQuery):
         await callback_query.bot.send_message(
             user_tg_id_to_notify,
             f"❌ Ваша заявка #{request_id} была отклонена менеджером. "
-            f"Пожалуйста, свяжитесь с поддержкой для уточнения деталей или ожидайте сообщения от менеджера."
+            "Пожалуйста, свяжитесь с поддержкой для уточнения деталей или ожидайте сообщения от менеджера."
         )
 
         await callback_query.bot.send_message(
