@@ -51,22 +51,18 @@ async def update_and_store_rates_in_fsm(state: FSMContext, client: CoinGeckoClie
 
     try:
         rates = await current_client.get_rate()  # Ожидаем {'USDT/THB': ..., 'RUB/THB': ...}
-        if rates and isinstance(rates, dict) and 'USDT/THB' in rates and 'RUB/THB' in rates:
-            usdt_thb_rate = rates.get('USDT/THB')
-            rub_thb_rate = rates.get('RUB/THB')
-
-            await state.update_data(
-                current_usdt_thb_rate=usdt_thb_rate,
-                current_rub_thb_rate=rub_thb_rate,
-                # Также сохраняем курс, который будет использован для сделки (фиксируем его)
-                # Это будет сделано на этапе выбора направления
-            )
-            logging.info(f"Курсы обновлены и сохранены в FSM: USDT/THB={usdt_thb_rate}, RUB/THB={rub_thb_rate}")
-            return {'USDT/THB': usdt_thb_rate, 'RUB/THB': rub_thb_rate}
-        else:
+        if not rates or not isinstance(rates, dict) or 'USDT/THB' not in rates or 'RUB/THB' not in rates:
             logging.warning(f"Не удалось получить корректные курсы от CoinGecko. Ответ: {rates}")
             await state.update_data(current_usdt_thb_rate=None, current_rub_thb_rate=None)
             return None
+        usdt_thb_rate = rates.get('USDT/THB')
+        rub_thb_rate = rates.get('RUB/THB')
+        await state.update_data(
+            current_usdt_thb_rate=usdt_thb_rate,
+            current_rub_thb_rate=rub_thb_rate,
+        )
+        logging.info(f"Курсы обновлены и сохранены в FSM: USDT/THB={usdt_thb_rate}, RUB/THB={rub_thb_rate}")
+        return {'USDT/THB': usdt_thb_rate, 'RUB/THB': rub_thb_rate}
     except Exception as e:
         logging.error(f"Ошибка при получении или сохранении курсов: {e}")
         await state.update_data(current_usdt_thb_rate=None, current_rub_thb_rate=None)
