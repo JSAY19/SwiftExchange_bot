@@ -5,6 +5,7 @@ import datetime
 from sqlalchemy import BigInteger, ForeignKey, text, select, desc  # Добавили select, desc
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
+import logging
 
 # DATABASE_URL = config("DATABASE_URL") # Раскомментируй, если используешь decouple
 
@@ -77,22 +78,30 @@ async def _get_user_id_by_tg_id(session, tg_id: int) -> int | None:
 
 
 # --- Пользователи ---
-async def set_user(tg_id: int, username: str = None):
-    """Запись или обновление пользователя в БД."""
-    async with async_session_() as session:
-        async with session.begin():
-            stmt = select(UserTable).where(UserTable.tg_id == tg_id)
-            user = await session.scalar(stmt)
+async def set_user(tg_id: int, username: str = None) -> bool:
+    """
+    Запись или обновление пользователя в БД.
+    Возвращает True если пользователь успешно создан/обновлен, False в случае ошибки.
+    """
+    try:
+        async with async_session_() as session:
+            async with session.begin():
+                stmt = select(UserTable).where(UserTable.tg_id == tg_id)
+                user = await session.scalar(stmt)
 
-            if not user:
-                user = UserTable(tg_id=tg_id, role=Role.client, username=username)
-                session.add(user)
-                print(f"User {tg_id} created.")
-            elif user.username != username:  # Обновляем имя пользователя только если оно изменилось
-                user.username = username
-                print(f"User {tg_id} username updated to '{username}'.")
-            else:
-                print(f"User {tg_id} already exists with username '{username}'. No update needed.")
+                if not user:
+                    user = UserTable(tg_id=tg_id, role=Role.client, username=username)
+                    session.add(user)
+                    logging.info(f"User {tg_id} created successfully.")
+                elif user.username != username:  # Обновляем имя пользователя только если оно изменилось
+                    user.username = username
+                    logging.info(f"User {tg_id} username updated to '{username}'.")
+                else:
+                    logging.info(f"User {tg_id} already exists with username '{username}'. No update needed.")
+                return True
+    except Exception as e:
+        logging.error(f"Error in set_user for tg_id {tg_id}: {str(e)}")
+        return False
 
 
 async def get_user_role(tg_id: int) -> Role | None:
