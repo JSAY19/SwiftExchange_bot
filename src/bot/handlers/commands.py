@@ -720,7 +720,7 @@ async def handle_payment_screenshot(message: types.Message, state: FSMContext):
                 f"💨 Пользователь: @{safe_username} (tg_id: {user_tg_id})\n"
                 f"💱 Направление: {safe_currency_from} → {safe_currency_to}\n" 
                 f"🏦 Способ получения: {safe_receive_type}\n" 
-                f"Курс: 1 {safe_currency_from} → {rub_usdt_rate:.2f} USDT; 1 USDT → {usdt_thb_rate:.2f} THB\n1 {safe_currency_from} = {safe_actual_rate_str} {safe_currency_to}\n"
+                f"Курс: 1 USDT → {rub_usdt_rate:.2f} {safe_currency_from}; 1 USDT → {usdt_thb_rate:.2f} THB\n1 {safe_currency_from} = {safe_actual_rate_str} {safe_currency_to}\n"
                 f"💸 Отдал: {amount_to_give:.2f} {safe_currency_from}{safe_commission_text}\n"
                 f"💰 К получению: {amount_to_get:.2f} {safe_currency_to}\n"
             )
