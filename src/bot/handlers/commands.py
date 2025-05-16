@@ -53,16 +53,25 @@ async def update_and_store_rates_in_fsm(state: FSMContext, client: CoinGeckoClie
 
     try:
         rates = await current_client.get_rate()
-        if rates and isinstance(rates, dict) and 'USDT/THB' in rates and 'RUB/THB' in rates:
+        print(rates)
+
+        if rates and isinstance(rates, dict) and 'USDT/THB' in rates and 'RUB/USDT' in rates:
             usdt_thb_rate = rates.get('USDT/THB') * (1 - 0.1)
-            rub_thb_rate = rates.get('RUB/THB')
+            rub_usdt_rate = rates.get('RUB/USDT') * (1 + 0.03)
+
+            print(usdt_thb_rate, rub_usdt_rate)
+
+            rub_thb_rate = usdt_thb_rate / rub_usdt_rate
+
+            print(rub_thb_rate)
 
             await state.update_data(
                 current_usdt_thb_rate=usdt_thb_rate,
+                current_rub_usdt_rate=rub_usdt_rate,
                 current_rub_thb_rate=rub_thb_rate,
             )
             logging.info(f"Курсы обновлены и сохранены в FSM: USDT/THB={usdt_thb_rate}, RUB/THB={rub_thb_rate}")
-            return {'USDT/THB': usdt_thb_rate, 'RUB/THB': rub_thb_rate}
+            return {'USDT/THB': usdt_thb_rate, 'RUB/THB': rub_thb_rate, 'RUB/USDT': rub_usdt_rate}
         else:
             logging.warning(f"Не удалось получить корректные курсы от CoinGecko. Ответ: {rates}")
             await state.update_data(current_usdt_thb_rate=None, current_rub_thb_rate=None)
@@ -111,6 +120,8 @@ async def exchange_main(message: types.Message, state: FSMContext):
         logging.info(f"User '{get_user_display(message.from_user)}' выбрал 'Совершить обмен'.")
 
         actual_rates = await update_and_store_rates_in_fsm(state)
+
+        print(actual_rates)
         if not actual_rates:
             await message.answer(
                 "Не удалось получить актуальные курсы обмена. Попробуйте позже или свяжитесь с поддержкой.")
@@ -227,7 +238,7 @@ async def usdt_to_thb_handler(callback_query: types.CallbackQuery, state: FSMCon
         await state.update_data(
             currency_from="USDT",
             currency_to="THB",
-            exchange_rate_str=str(current_usdt_thb),
+            exchange_rate_str=str(round(current_usdt_thb,2)),
             request_id=None
         )
 
@@ -267,14 +278,14 @@ async def rub_to_thb_handler(callback_query: types.CallbackQuery, state: FSMCont
         await state.update_data(
             currency_from="RUB",
             currency_to="THB",
-            exchange_rate_str=str(current_rub_thb),
+            exchange_rate_str=str(round(current_rub_thb,4)),
             request_id=None
         )
 
         await safe_edit_text(
             callback_query.message,
             f"<b>🎈Выбор обмена (RUB → THB)🎈</b>\n"
-            f"Текущий курс для информации: <b>1 RUB ≈ {current_rub_thb:.4f} THB</b>\n"
+            f"Текущий курс для информации: <b>1 RUB ≈ {round(current_rub_thb,4)} THB</b>\n"
             f"(курс для обмена будет зафиксирован на этом шаге)\n\n"
             "<b>⚙ Варианты обмена:</b>\n"
             "🌐 <b>В банкомате</b> (Мин: 10000 THB, иначе ком. 300 THB)\n"
@@ -397,7 +408,7 @@ async def switch_input_currency_handler(callback_query: types.CallbackQuery, sta
             network_text_val = "✔ Сеть: TRC20"
 
         elif currency_from == "RUB":
-            display_rate_text_for_deal = f"1 RUB = {fixed_rate_for_deal_float:.4f} THB"
+            display_rate_text_for_deal = f"1 RUB = {fixed_rate_for_deal_float} THB"
             if callback_query.data == "enter_thb_amount_rub":
                 await state.update_data(input_type="input_thb")
                 prompt_currency = "THB, которую вы хотите получить"
@@ -684,6 +695,9 @@ async def handle_payment_screenshot(message: types.Message, state: FSMContext):
         actual_rate_str = data.get("exchange_rate_str")  # Зафиксированный курс
         final_commission_text = data.get("final_commission_text", "")
 
+        rub_usdt_rate = data.get("current_rub_usdt_rate")
+        usdt_thb_rate = data.get("current_usdt_thb_rate")
+
         if not request_id:
             logging.error(f"Критическая ошибка: request_id не найден в FSM для {user_tg_id} при отправке скриншота.")
             await message.answer("Произошла внутренняя ошибка. Пожалуйста, свяжитесь с поддержкой.",
@@ -700,15 +714,27 @@ async def handle_payment_screenshot(message: types.Message, state: FSMContext):
         safe_actual_rate_str = html.escape(actual_rate_str)
         safe_commission_text = html.escape(final_commission_text)
 
-        text_for_manager = (
-            f"💌 Новая заявка #{request_id} ожидает обработки!\n\n"
-            f"💨 Пользователь: @{safe_username} (tg_id: {user_tg_id})\n"
-            f"💱 Направление: {safe_currency_from} → {safe_currency_to}\n"
-            f"🏦 Способ получения: {safe_receive_type}\n"
-            f"Курс: 1 {safe_currency_from} = {safe_actual_rate_str} {safe_currency_to}\n"
-            f"💸 Отдал: {amount_to_give:.2f} {safe_currency_from}{safe_commission_text}\n"
-            f"💰 К получению: {amount_to_get:.2f} {safe_currency_to}\n"
-        )
+        if f"{safe_currency_from}/{safe_currency_to}" == "RUB/THB":
+            text_for_manager = (
+                f"💌 Новая заявка #{request_id} ожидает обработки!\n\n"
+                f"💨 Пользователь: @{safe_username} (tg_id: {user_tg_id})\n"
+                f"💱 Направление: {safe_currency_from} → {safe_currency_to}\n" 
+                f"🏦 Способ получения: {safe_receive_type}\n" 
+                f"Курс: 1 {safe_currency_from} → {rub_usdt_rate:.2f} USDT; 1 USDT → {usdt_thb_rate:.2f} THB\n1 {safe_currency_from} = {safe_actual_rate_str} {safe_currency_to}\n"
+                f"💸 Отдал: {amount_to_give:.2f} {safe_currency_from}{safe_commission_text}\n"
+                f"💰 К получению: {amount_to_get:.2f} {safe_currency_to}\n"
+            )
+
+        else:
+            text_for_manager = (
+                f"💌 Новая заявка #{request_id} ожидает обработки!\n\n"
+                f"💨 Пользователь: @{safe_username} (tg_id: {user_tg_id})\n"
+                f"💱 Направление: {safe_currency_from} → {safe_currency_to}\n"
+                f"🏦 Способ получения: {safe_receive_type}\n"
+                f"Курс: 1 {safe_currency_from} = {safe_actual_rate_str} {safe_currency_to}\n"
+                f"💸 Отдал: {amount_to_give:.2f} {safe_currency_from}{safe_commission_text}\n"
+                f"💰 К получению: {amount_to_get:.2f} {safe_currency_to}\n"
+            )
 
         # Отправляем скриншот и текст менеджеру
         # Сначала фото, потом текст с кнопками
