@@ -32,7 +32,7 @@ MIN_COMMISSION_THB = 300.0
 MIN_THB_FOR_NO_COMMISSION = 10000.0
 
 # --- ID Менеджера (лучше вынести в конфиг) ---
-MANAGER_CHAT_ID = 6659909595  # Пример
+MANAGER_CHAT_ID = 403922352 # Пример
 GROUP_CHAT_ID = -1002592747989# Групповой чат Assist chat Xchanger
 
 router = Router()
@@ -355,7 +355,7 @@ async def select_receive_type_handler(callback_query: types.CallbackQuery, state
         text_parts.extend([
             "💰 Мин. сумма для обмена без доп. комиссии: 10000 THB",
             "(Если сумма к получению &lt; 10000 THB, будет добавлена комиссия 300 THB к сумме, которую вы отдаете)",
-            f"<b>❕ Введите сумму {safe_input_prompt}:</b>"
+            f"<b>❕ Введите сумму {safe_input_prompt} (просто введите число):</b>"
         ])
 
         text = "\n\n".join(text_parts)
@@ -433,7 +433,7 @@ async def switch_input_currency_handler(callback_query: types.CallbackQuery, sta
         text_parts.extend([
             "💰 Мин. сумма для обмена без доп. комиссии: 10000 THB",
             "(Если сумма к получению &lt; 10000 THB, будет добавлена комиссия 300 THB к сумме, которую вы отдаете)",
-            f"<b>❕ Введите сумму {safe_prompt_currency}:</b>"
+            f"<b>❕ Введите сумму {safe_prompt_currency} (просто введите число):</b>"
         ])
         text = "\n\n".join(text_parts)
 
@@ -458,7 +458,6 @@ async def handle_amount_input(message: types.Message, state: FSMContext):
             logging.info(f"Получена сумма '{message.text}' от {get_user_display(message.from_user)} вне контекста FSM.")
             return
 
-        # Используем зафиксированный (и уже скорректированный на RATE_ADJUSTMENT_PERCENTAGE) курс из FSM
         fixed_adjusted_rate_str = data.get("exchange_rate_str")
         if not fixed_adjusted_rate_str:
             logging.error(
@@ -468,103 +467,74 @@ async def handle_amount_input(message: types.Message, state: FSMContext):
             await state.clear()
             return
 
-        # Это ваш курс обмена (уже с учетом 10% "дельты")
         exchange_rate_for_calc = float(fixed_adjusted_rate_str)
 
         amount_str = message.text.replace(',', '.')
-        amount_entered_by_user = float(amount_str)  # Сумма, которую ввел пользователь
+        amount_entered_by_user = float(amount_str)
         user_tg_id = message.from_user.id
 
         receive_type = data.get("receive_type", "Не указан")
-        currency_to = data.get("currency_to")  # Должен быть "THB"
-        input_type = data.get("input_type")  # Какую валюту вводил пользователь
+        currency_to = data.get("currency_to")
+        input_type = data.get("input_type")
 
-        # Переменные для финальных сумм
-        final_amount_to_give_by_user = 0.0  # Сколько пользователь в итоге отдаст (включая возможную мин. комиссию)
-        final_amount_to_get_by_user = 0.0  # Сколько пользователь в итоге получит (уже с вычетом всех комиссий)
-
-        min_commission_text = ""  # Текст про минимальную комиссию (300 THB)
-        exchanger_fee_thb = 0.0  # Сумма комиссии обменника в THB
-        exchanger_fee_text = ""  # Текст про комиссию обменника
-
-        # --- Шаг 1: Расчет предварительных сумм без комиссии обменника, но с учетом минимальной комиссии ---
-        preliminary_amount_to_give = 0.0
-        preliminary_amount_to_get_thb = 0.0  # Сумма в THB до вычета комиссии обменника
+        final_amount_to_give_by_user = 0.0
+        final_amount_to_get_by_user = 0.0
+        min_commission_text = ""
+        exchanger_fee_thb = 0.0
+        exchanger_fee_text = ""
 
         if currency_from == "USDT":
             if input_type == "input_thb":  # Пользователь ввел, сколько THB хочет получить
-                preliminary_amount_to_get_thb = amount_entered_by_user
-                preliminary_amount_to_give = preliminary_amount_to_get_thb / exchange_rate_for_calc
-                if preliminary_amount_to_get_thb < MIN_THB_FOR_NO_COMMISSION and preliminary_amount_to_get_thb > 0:
-                    # Теперь комиссия вычитается из суммы к получению
-                    preliminary_amount_to_get_thb -= MIN_COMMISSION_THB
-                    if preliminary_amount_to_get_thb < 0:
-                        preliminary_amount_to_get_thb = 0
-                    min_commission_text = f"\n(из суммы к получению вычтена комиссия {MIN_COMMISSION_THB:.0f} THB за малую сумму)"
-            else:  # input_usdt. Пользователь ввел, сколько USDT хочет отдать
+                thb_to_get = amount_entered_by_user
+                thb_with_min_commission = thb_to_get
+                min_commission_text = ""
+                if thb_to_get < MIN_THB_FOR_NO_COMMISSION:
+                    thb_with_min_commission += MIN_COMMISSION_THB
+                    min_commission_text = f"\n(добавлена комиссия {MIN_COMMISSION_THB:.0f} THB за малую сумму)"
+                thb_before_fee = thb_with_min_commission / (1 - EXCHANGER_FEE_PERCENTAGE)
+                final_amount_to_give_by_user = thb_before_fee / exchange_rate_for_calc
+                final_amount_to_get_by_user = thb_to_get
+            else:  # input_usdt
                 preliminary_amount_to_give_initial = amount_entered_by_user
-                preliminary_amount_to_get_thb_calculated = preliminary_amount_to_give_initial * exchange_rate_for_calc
-
-                preliminary_amount_to_give = preliminary_amount_to_give_initial
-                preliminary_amount_to_get_thb = preliminary_amount_to_get_thb_calculated
-
-                if preliminary_amount_to_get_thb_calculated < MIN_THB_FOR_NO_COMMISSION and preliminary_amount_to_get_thb_calculated > 0:
-                    # Теперь комиссия вычитается из суммы к получению
-                    preliminary_amount_to_get_thb -= MIN_COMMISSION_THB
-                    if preliminary_amount_to_get_thb < 0:
-                        preliminary_amount_to_get_thb = 0
-                    min_commission_text = f"\n(из суммы к получению вычтена комиссия {MIN_COMMISSION_THB:.0f} THB за малую сумму)"
-
-        elif currency_from == "RUB":
-            if input_type == "input_thb":
-                preliminary_amount_to_get_thb = amount_entered_by_user
-                preliminary_amount_to_give = preliminary_amount_to_get_thb / exchange_rate_for_calc
+                preliminary_amount_to_get_thb = preliminary_amount_to_give_initial * exchange_rate_for_calc
                 if preliminary_amount_to_get_thb < MIN_THB_FOR_NO_COMMISSION and preliminary_amount_to_get_thb > 0:
-                    # Теперь комиссия вычитается из суммы к получению
-                    preliminary_amount_to_get_thb -= MIN_COMMISSION_THB
-                    if preliminary_amount_to_get_thb < 0:
-                        preliminary_amount_to_get_thb = 0
+                    final_amount_to_get_by_user = preliminary_amount_to_get_thb - MIN_COMMISSION_THB
+                    if final_amount_to_get_by_user < 0:
+                        final_amount_to_get_by_user = 0
                     min_commission_text = f"\n(из суммы к получению вычтена комиссия {MIN_COMMISSION_THB:.0f} THB за малую сумму)"
+                else:
+                    final_amount_to_get_by_user = preliminary_amount_to_get_thb
+                exchanger_fee_thb = final_amount_to_get_by_user * EXCHANGER_FEE_PERCENTAGE
+                final_amount_to_get_by_user = final_amount_to_get_by_user - exchanger_fee_thb
+                final_amount_to_give_by_user = preliminary_amount_to_give_initial
+        elif currency_from == "RUB":
+            if input_type == "input_thb":  # Пользователь ввел, сколько THB хочет получить
+                thb_to_get = amount_entered_by_user
+                thb_with_min_commission = thb_to_get
+                min_commission_text = ""
+                if thb_to_get < MIN_THB_FOR_NO_COMMISSION:
+                    thb_with_min_commission += MIN_COMMISSION_THB
+                    min_commission_text = f"\n(добавлена комиссия {MIN_COMMISSION_THB:.0f} THB за малую сумму)"
+                thb_before_fee = thb_with_min_commission / (1 - EXCHANGER_FEE_PERCENTAGE)
+                final_amount_to_give_by_user = thb_before_fee / exchange_rate_for_calc
+                final_amount_to_get_by_user = thb_to_get
             else:  # input_rub
                 preliminary_amount_to_give_initial = amount_entered_by_user
-                preliminary_amount_to_get_thb_calculated = preliminary_amount_to_give_initial * exchange_rate_for_calc
-
-                preliminary_amount_to_give = preliminary_amount_to_give_initial
-                preliminary_amount_to_get_thb = preliminary_amount_to_get_thb_calculated
-
-                if preliminary_amount_to_get_thb_calculated < MIN_THB_FOR_NO_COMMISSION and preliminary_amount_to_get_thb_calculated > 0:
-                    # Теперь комиссия вычитается из суммы к получению
-                    preliminary_amount_to_get_thb -= MIN_COMMISSION_THB
-                    if preliminary_amount_to_get_thb < 0:
-                        preliminary_amount_to_get_thb = 0
+                preliminary_amount_to_get_thb = preliminary_amount_to_give_initial * exchange_rate_for_calc
+                if preliminary_amount_to_get_thb < MIN_THB_FOR_NO_COMMISSION and preliminary_amount_to_get_thb > 0:
+                    final_amount_to_get_by_user = preliminary_amount_to_get_thb - MIN_COMMISSION_THB
+                    if final_amount_to_get_by_user < 0:
+                        final_amount_to_get_by_user = 0
                     min_commission_text = f"\n(из суммы к получению вычтена комиссия {MIN_COMMISSION_THB:.0f} THB за малую сумму)"
-
-        if preliminary_amount_to_get_thb <= 0 or preliminary_amount_to_give <= 0:
+                else:
+                    final_amount_to_get_by_user = preliminary_amount_to_get_thb
+                exchanger_fee_thb = final_amount_to_get_by_user * EXCHANGER_FEE_PERCENTAGE
+                final_amount_to_get_by_user = final_amount_to_get_by_user - exchanger_fee_thb
+                final_amount_to_give_by_user = preliminary_amount_to_give_initial
+        if final_amount_to_get_by_user <= 0 or final_amount_to_give_by_user <= 0:
             await message.answer("Сумма обмена слишком мала. Пожалуйста, введите большую сумму.")
             return
 
-        # --- Шаг 2: Применение комиссии обменника (EXCHANGER_FEE_PERCENTAGE) ---
-        # Комиссия берется от суммы THB, которую пользователь получил бы без этой комиссии
-        exchanger_fee_thb = preliminary_amount_to_get_thb * EXCHANGER_FEE_PERCENTAGE
-        final_amount_to_get_by_user = preliminary_amount_to_get_thb - exchanger_fee_thb
-
-        # Текст про комиссию обменника (если она есть)
-        #if exchanger_fee_thb > 0.005:  # Показываем, если комиссия хотя бы полкопейки бата
-         #   exchanger_fee_text = f"\nКомиссия обменника: {exchanger_fee_thb:.2f} THB ({EXCHANGER_FEE_PERCENTAGE * 100:.1f}%)"
-
-        final_amount_to_give_by_user = preliminary_amount_to_give  # Сумма к отдаче не меняется от комиссии обменника (по Варианту 1)
-
-        # Итоговый текст с деталями комиссий
-        all_commission_details_text = min_commission_text  # Сначала текст про мин. комиссию (если была)
-        # if min_commission_text and exchanger_fee_text: # Если обе комиссии
-        #     all_commission_details_text += " и " + exchanger_fee_text.lstrip('\n') # Убираем лишний перенос строки
-        # elif exchanger_fee_text: # Если только комиссия обменника
-        #     all_commission_details_text = exchanger_fee_text
-        # Более простой вариант: просто конкатенируем, если они есть
-        if exchanger_fee_text:
-            all_commission_details_text += exchanger_fee_text
-
-        # --- Шаг 3: Формирование текста для отображения и запись в БД ---
         display_rate_text_for_deal = ""
         if currency_from == "USDT":
             display_rate_text_for_deal = f"1 USDT = {exchange_rate_for_calc:.2f} THB"
@@ -574,10 +544,10 @@ async def handle_amount_input(message: types.Message, state: FSMContext):
         new_request_in_db = await db.create_exchange_request(
             tg_id=user_tg_id,
             currency_from=currency_from,
-            currency_to=currency_to,  # THB
+            currency_to=currency_to,
             give=round(final_amount_to_give_by_user, 8 if currency_from == "USDT" else 2),
-            rate=fixed_adjusted_rate_str,  # Это ваш "скорректированный на 10%" курс
-            get=round(final_amount_to_get_by_user, 2),  # Это итоговая сумма с учетом всех комиссий
+            rate=fixed_adjusted_rate_str,
+            get=round(final_amount_to_get_by_user, 2),
         )
 
         if not new_request_in_db:
@@ -588,19 +558,17 @@ async def handle_amount_input(message: types.Message, state: FSMContext):
 
         request_id = new_request_in_db.id
 
-        # Сохраняем в FSM финальные суммы для использования на следующих шагах
         await state.update_data(
             request_id=request_id,
-            final_amount_to_give=final_amount_to_give_by_user,  # Это то, что пользователь отдаст
-            final_amount_to_get=final_amount_to_get_by_user,  # Это то, что пользователь получит
-            final_commission_text=all_commission_details_text  # Общий текст про все комиссии
-            # exchange_rate_str (ваш скорректированный курс) уже в FSM
+            final_amount_to_give=final_amount_to_give_by_user,
+            final_amount_to_get=final_amount_to_get_by_user,
+            final_commission_text=min_commission_text
         )
 
         safe_receive_type = html.escape(receive_type)
-        safe_display_rate = html.escape(display_rate_text_for_deal)  # Это ваш скорректированный курс
+        safe_display_rate = html.escape(display_rate_text_for_deal)
         safe_currency_from = html.escape(currency_from)
-        safe_commission_details_text = html.escape(all_commission_details_text)
+        safe_commission_details_text = html.escape(min_commission_text)
         safe_currency_to = html.escape(str(currency_to))
 
         text_to_confirm = (
@@ -1111,7 +1079,7 @@ async def show_exchange_history_handler(callback_query: types.CallbackQuery):
 
         if user_role == db.Role.client:
             user_history = await db.get_user_exchange_history(tg_id=user_tg_id, include_creation_status=True)
-            exchanges_to_display = user_history[:10]  # Последние 10
+            exchanges_to_display = user_history[:5]  # Последние 10
             if not exchanges_to_display:
                 history_text_body = "У вас пока нет истории обменов."  # Без тегов, т.к. header уже с тегами
             reply_markup_history = inline_keyboards.get_profile_main_user_keyboard()
