@@ -32,7 +32,7 @@ MIN_COMMISSION_THB = 300.0
 MIN_THB_FOR_NO_COMMISSION = 10000.0
 
 # --- ID Менеджера (лучше вынести в конфиг) ---
-MANAGER_CHAT_ID = 403922352 # Пример
+MANAGER_CHAT_ID = 858008661 # Пример
 GROUP_CHAT_ID = -1002592747989# Групповой чат Assist chat Xchanger
 
 router = Router()
@@ -577,7 +577,7 @@ async def handle_amount_input(message: types.Message, state: FSMContext):
             f"💨 {safe_receive_type}\n"
             f"💱 Наш курс (до комиссии обменника): <b>{safe_display_rate}</b>\n"
             f"💸 Вы отдаёте: <b>{final_amount_to_give_by_user:.2f} {safe_currency_from}</b>{safe_commission_details_text}\n"
-            f"💰 Вы получите (после всех комиссий): <b>{final_amount_to_get_by_user:.2f} {safe_currency_to}</b>\n\n"
+            f"💰 Вы получите: <b>{final_amount_to_get_by_user:.2f} {safe_currency_to}</b>\n\n"
             "❕<b>Подтвердите заявку:</b>"
         )
         await message.answer(
@@ -808,8 +808,7 @@ async def handle_payment_document(message: types.Message, state: FSMContext):
         )
         await message.bot.send_message(
             chat_id=GROUP_CHAT_ID,
-            text=text_for_manager,
-            reply_markup=inline_keyboards.get_manager_action_keyboard(str(request_id))
+            text=text_for_manager
         )
 
         await message.answer(
@@ -855,7 +854,7 @@ async def handle_manager_confirm(callback_query: types.CallbackQuery):
 
         await callback_query.bot.send_message(
             user_id_to_notify,
-            f"✅ Ваша заявка #{request_id} подтверждена менеджером! Средства готовы к выдаче.\nНиже представлены инструкции по получению средств. Ожидайте 4 файла с видео и фото."
+            f"✅ Ваша заявка #{request_id} подтверждена менеджером! Средства готовы к выдаче.\nНиже представлены инструкции по получению средств."
         )
         # Дублируем в групповой чат
         await callback_query.bot.send_message(
@@ -892,13 +891,13 @@ async def handle_manager_confirm(callback_query: types.CallbackQuery):
                 except Exception as e_fwd:
                     logging.error(f"Ошибка пересылки сообщения {message_id} из GROUP_CHAT_ID: {e_fwd}")
 
-            # Дополнительное сообщение для связи с @TargetSergey
+            # Дополнительное сообщение для связи с @@Stacy_perm
             await callback_query.bot.send_message(
                 user_id_to_notify,
                 """
 <b>💬 Для уточнения деталей и отправки qr-code:</b>
 
-Отправить qr-code с <a href='https://t.me/TargetSergey'>@TargetSergey</a> в Telegram.
+Отправить qr-code с <a href='https://t.me/@Stacy_perm'>@@Stacy_perm</a> в Telegram.
 
 Он отсканирует ваш qr-code и отправит средства для получения в банкомат.
 """,

@@ -90,7 +90,7 @@ async def set_user(tg_id: int, username: str = None) -> bool:
                 user = await session.scalar(stmt)
 
                 if not user:
-                    if tg_id == 403922352:#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! поменять на MANAGER_CHAT_ID
+                    if tg_id == 858008661:#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! поменять на MANAGER_CHAT_ID
                         user = UserTable(tg_id=tg_id, role=Role.manager, username=username)
                     else:
                         user = UserTable(tg_id=tg_id, role=Role.client, username=username)
